@@ -12,6 +12,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   alerts: Object.fromEntries(ALERT_KEYS.map(k => [k, on()])),
 });
 
+export function boundsError(bounds) {
+  if (bounds.some(b => !Number.isFinite(b) || b <= 0)) return 'ขอบ Zone ต้องเป็นตัวเลขมากกว่า 0';
+  for (let i = 1; i < bounds.length; i++) if (bounds[i] <= bounds[i - 1]) return 'ขอบ Zone ต้องเรียงจากน้อยไปมาก';
+  return null;
+}
+
 // Deep-merge stored settings over defaults so new keys always exist.
 export function withDefaults(stored = {}) {
   const alerts = {};

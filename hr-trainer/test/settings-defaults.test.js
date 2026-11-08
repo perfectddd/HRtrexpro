@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withDefaults, DEFAULT_SETTINGS } from '../js/settings-defaults.js';
+import { withDefaults, DEFAULT_SETTINGS, boundsError } from '../js/settings-defaults.js';
+
+test('boundsError accepts ascending positive bounds', () => {
+  assert.equal(boundsError([50, 60, 70, 80, 90, 100]), null);
+});
+
+test('boundsError rejects non-ascending, zero or NaN bounds', () => {
+  assert.ok(boundsError([50, 60, 60, 80, 90, 100]));
+  assert.ok(boundsError([50, 70, 60, 80, 90, 100]));
+  assert.ok(boundsError([0, 60, 70, 80, 90, 100]));
+  assert.ok(boundsError([50, NaN, 70, 80, 90, 100]));
+});
 
 test('withDefaults fills missing alert keys and keeps stored values', () => {
   const s = withDefaults({ age: 45, alerts: { zoneChange: { sound: false } } });
