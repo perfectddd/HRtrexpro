@@ -19,6 +19,7 @@
 <div id="time">00:00</div>
 <div>
   <button id="connect">Connect</button>
+  <button id="connectAll">Scan ทั้งหมด</button>
   <button id="pip">PiP</button>
   <label><input type="checkbox" id="beep" checked> beep</label>
 </div>
@@ -38,13 +39,22 @@ function beep() {
   o.start(); o.stop(ac.currentTime + 0.05);
 }
 
-$('connect').onclick = async () => {
+$('connect').onclick = () => connect({ filters: [{ services: ['heart_rate'] }] });
+// Diagnostic: list every BLE device; still ask for heart_rate access once connected.
+$('connectAll').onclick = () => connect({ acceptAllDevices: true, optionalServices: ['heart_rate', 0xfee0, 0xfee1] });
+
+async function connect(options) {
   try {
     ac = ac || new AudioContext(); await ac.resume();
-    const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
-    log('device: ' + dev.name);
+    const dev = await navigator.bluetooth.requestDevice(options);
+    log('device: ' + dev.name + ' id=' + dev.id);
     dev.addEventListener('gattserverdisconnected', () => log('DISCONNECTED'));
     const srv = await dev.gatt.connect();
+    log('GATT connected');
+    try {
+      const all = await srv.getPrimaryServices();
+      log('services: ' + all.map(s => s.uuid.slice(4, 8)).join(', '));
+    } catch (e) { log('list services ERR ' + e.message); }
     const ch = await (await srv.getPrimaryService('heart_rate')).getCharacteristic('heart_rate_measurement');
     ch.addEventListener('characteristicvaluechanged', e => {
       const v = e.target.value, f = v.getUint8(0);
@@ -55,8 +65,8 @@ $('connect').onclick = async () => {
     });
     await ch.startNotifications();
     log('notifications started');
-  } catch (e) { log('ERR ' + e.message); }
-};
+  } catch (e) { log('ERR ' + e.name + ': ' + e.message); }
+}
 
 function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
 function draw() {
