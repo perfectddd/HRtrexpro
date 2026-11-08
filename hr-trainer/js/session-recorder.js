@@ -42,10 +42,9 @@ export class SessionRecorder {
     return structuredClone(this.session);
   }
 
-  finish(endedAt) {
+  finish(endedAt, endT = (endedAt - this.session.startedAt) / 1000) {
     const s = this.session;
     s.endedAt = endedAt;
-    const endT = (endedAt - s.startedAt) / 1000;
     const prev = s.steps.at(-1);
     if (prev && prev.endT == null) prev.endT = endT;
     s.summary = summarize(s.samples);

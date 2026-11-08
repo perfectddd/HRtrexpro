@@ -46,6 +46,14 @@ test('markStep closes the previous step', () => {
   assert.equal(sess.summary.durationSec, 0);
 });
 
+test('finish accepts an explicit endT on the active timeline', () => {
+  const r = new SessionRecorder({ workoutId: null, workoutName: 'W', startedAt: 0 });
+  r.markStep({ name: 'a', kind: 'work', startT: 0 });
+  const sess = r.finish(60000, 45);
+  assert.equal(sess.steps[0].endT, 45);
+  assert.equal(sess.endedAt, 60000);
+});
+
 test('fromCheckpoint continues the same session', () => {
   const r = new SessionRecorder({ workoutId: 'w', workoutName: 'W', startedAt: 0 });
   r.addSample(s(90, 1, 0));

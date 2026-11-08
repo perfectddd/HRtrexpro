@@ -62,6 +62,7 @@ async function render() {
   unmount?.();
   unmount = null;
   document.body.classList.remove('in-workout');
+  document.body.classList.toggle('route-workout', name === 'workout');
   root.replaceChildren();
   ctx.params = params;
   for (const a of document.querySelectorAll('#nav a')) {

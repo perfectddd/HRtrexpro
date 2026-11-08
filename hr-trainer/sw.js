@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   // Network-first so updates show up immediately; cache is the offline fallback.
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then(res => {
         if (res.ok && new URL(e.request.url).origin === location.origin) {
           const copy = res.clone();
