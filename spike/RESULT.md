@@ -25,6 +25,8 @@ Notes:
 - No "Heart rate sharing / broadcast" menu was found, so the no-key route is not available.
 - The key comes from Zepp → Profile → Settings → About → tap logo 10× → Network diagnostics → Share logs (the method Notify for Xiaomi uses). Never reset/unpair the watch: that changes the key.
 
+Main app (`hr-trainer/`) with the auth key in Settings: ✅ confirmed working on the PC browser by the user (2026-11-08).
+
 ## S2 — PiP opens: ✅ on desktop Chrome (not yet tested on Android)
 ## S3 — PiP keeps updating with YouTube on top: ⏳ not tested yet (needs Android device)
 
