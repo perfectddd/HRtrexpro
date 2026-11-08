@@ -1,0 +1,9 @@
+{
+  "name": "hr-trainer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test hr-trainer/test/",
+    "serve": "python -m http.server 8080"
+  }
+}
