@@ -20,6 +20,7 @@
 <div>
   <button id="connect">Connect</button>
   <button id="connectAll">Scan ทั้งหมด</button>
+  <button id="startHr">สั่งวัดต่อเนื่อง (2A39)</button>
   <button id="pip">PiP</button>
   <label><input type="checkbox" id="beep" checked> beep</label>
 </div>
@@ -55,7 +56,13 @@ async function connect(options) {
       const all = await srv.getPrimaryServices();
       log('services: ' + all.map(s => s.uuid.slice(4, 8)).join(', '));
     } catch (e) { log('list services ERR ' + e.message); }
-    const ch = await (await srv.getPrimaryService('heart_rate')).getCharacteristic('heart_rate_measurement');
+    const hrSvc = await srv.getPrimaryService('heart_rate');
+    window.__hrSvc = hrSvc;
+    try {
+      const chars = await hrSvc.getCharacteristics();
+      log('heart_rate chars: ' + chars.map(c => c.uuid.slice(4, 8) + '[' + Object.entries(c.properties).filter(([, v]) => v === true).map(([k]) => k).join('/') + ']').join(', '));
+    } catch (e) { log('list chars ERR ' + e.message); }
+    const ch = await hrSvc.getCharacteristic('heart_rate_measurement');
     ch.addEventListener('characteristicvaluechanged', e => {
       const v = e.target.value, f = v.getUint8(0);
       const nb = (f & 1) ? v.getUint16(1, true) : v.getUint8(1);
@@ -65,8 +72,32 @@ async function connect(options) {
     });
     await ch.startNotifications();
     log('notifications started');
+    let lastPk = 0;
+    clearInterval(window.__pkTimer);
+    window.__pkTimer = setInterval(() => {
+      if (pkts !== lastPk) log('packets: ' + pkts + ', bpm: ' + bpm);
+      else log('no HR packets in last 5 s (total ' + pkts + ')');
+      lastPk = pkts;
+    }, 5000);
   } catch (e) { log('ERR ' + e.name + ': ' + e.message); }
 }
+
+// Huami-style HR control point: stop manual, start continuous, then keep-alive ping every 12 s.
+$('startHr').onclick = async () => {
+  try {
+    if (!window.__hrSvc) return log('connect first');
+    const cp = await window.__hrSvc.getCharacteristic('heart_rate_control_point');
+    const w = async bytes => {
+      await cp.writeValueWithResponse(new Uint8Array(bytes)).catch(() => cp.writeValue(new Uint8Array(bytes)));
+      log('wrote 2A39: ' + bytes.map(b => b.toString(16).padStart(2, '0')).join(' '));
+    };
+    await w([0x15, 0x02, 0x00]);
+    await w([0x15, 0x01, 0x00]);
+    await w([0x15, 0x01, 0x01]);
+    clearInterval(window.__ping);
+    window.__ping = setInterval(() => w([0x16]).catch(e => log('ping ERR ' + e.message)), 12000);
+  } catch (e) { log('2A39 ERR ' + e.name + ': ' + e.message); }
+};
 
 function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
 function draw() {
