@@ -24,6 +24,13 @@
   <button id="pip">PiP</button>
   <label><input type="checkbox" id="beep" checked> beep</label>
 </div>
+<div style="margin-top:8px; padding:8px; border:1px solid #555; border-radius:8px">
+  <b>Auth key (32 ตัวอักษร hex)</b><br>
+  <input id="authKey" placeholder="0123456789abcdef0123456789abcdef" style="width:100%; font-family:monospace; font-size:16px; padding:6px" autocomplete="off" spellcheck="false">
+  <label><input type="checkbox" id="cryptFlag" checked> ใช้ crypt flag 0x80 (นาฬิการุ่นใหม่)</label>
+  <label><input type="checkbox" id="rememberKey"> จำ key ในเบราว์เซอร์นี้</label><br>
+  <button id="authConnect">เชื่อมต่อ + ยืนยันตัว</button>
+</div>
 <canvas id="cv" width="320" height="180" hidden></canvas>
 <video id="vid" muted playsinline></video>
 <div id="log"></div>
@@ -122,6 +129,102 @@ $('pip').onclick = async () => {
   } catch (e) { log('PiP ERR ' + e.message); }
 };
 document.addEventListener('visibilitychange', () => log('visibility: ' + document.visibilityState));
+
+// ---------------- Huami auth (uses the EXISTING key; never sends a new key) ----------------
+const FEE1 = '0000fee1-0000-1000-8000-00805f9b34fb';
+const FEE0 = '0000fee0-0000-1000-8000-00805f9b34fb';
+const AUTH_CHAR = '00000009-0000-3512-2118-0009af100700';
+const hex = b => [...new Uint8Array(b.buffer ?? b)].map(x => x.toString(16).padStart(2, '0')).join(' ');
+
+try {
+  const saved = localStorage.getItem('spikeAuthKey');
+  if (saved) { $('authKey').value = saved; $('rememberKey').checked = true; }
+} catch { /* storage unavailable */ }
+
+function parseKey(s) {
+  const clean = s.trim().replace(/^0x/i, '').replace(/[\s:-]/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(clean)) return null;
+  return new Uint8Array(clean.match(/../g).map(x => parseInt(x, 16)));
+}
+
+// AES-128-ECB of one 16-byte block via WebCrypto: CBC with a zero IV gives E(P) as the first block.
+async function aesEcbBlock(keyBytes, block) {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC' }, false, ['encrypt']);
+  const out = await crypto.subtle.encrypt({ name: 'AES-CBC', iv: new Uint8Array(16) }, key, block);
+  return new Uint8Array(out).slice(0, 16);
+}
+window.__aesEcbBlock = aesEcbBlock;
+
+$('authConnect').onclick = async () => {
+  const keyBytes = parseKey($('authKey').value);
+  if (!keyBytes) return log('ERR auth key ต้องเป็น hex 32 ตัวอักษร');
+  try {
+    if ($('rememberKey').checked) localStorage.setItem('spikeAuthKey', $('authKey').value.trim());
+    else localStorage.removeItem('spikeAuthKey');
+  } catch { /* ignore */ }
+  const crypt = $('cryptFlag').checked ? 0x80 : 0x00;
+  const authFlags = 0x00;
+  try {
+    ac = ac || new AudioContext(); await ac.resume();
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Amazfit' }, { services: [FEE0] }],
+      optionalServices: ['heart_rate', FEE0, FEE1],
+    });
+    log('device: ' + dev.name);
+    dev.addEventListener('gattserverdisconnected', () => { log('DISCONNECTED'); clearInterval(window.__ping); });
+    const srv = await dev.gatt.connect();
+    log('GATT connected');
+    const auth = await (await srv.getPrimaryService(FEE1)).getCharacteristic(AUTH_CHAR);
+
+    const result = await new Promise(async (resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('auth timeout (no reply in 8 s)')), 8000);
+      auth.addEventListener('characteristicvaluechanged', async e => {
+        const v = new Uint8Array(e.target.value.buffer);
+        log('auth <- ' + hex(v));
+        if (v[0] !== 0x10) return;
+        const cmd = v[1] & 0x0f, status = v[2];
+        try {
+          if (cmd === 0x02 && status === 0x01) {
+            const random = v.slice(3, 19);
+            const enc = await aesEcbBlock(keyBytes, random);
+            const msg = new Uint8Array([0x03 | crypt, authFlags, ...enc]);
+            await auth.writeValueWithoutResponse(msg);
+            log('auth -> send encrypted number');
+          } else if (cmd === 0x03 && status === 0x01) {
+            clearTimeout(timer); resolve('ok');
+          } else if (status !== 0x01) {
+            clearTimeout(timer); reject(new Error(`auth failed: cmd ${cmd} status ${status} (key ผิด หรือลองสลับ crypt flag)`));
+          }
+        } catch (err) { clearTimeout(timer); reject(err); }
+      });
+      await auth.startNotifications();
+      const req = crypt ? [0x02 | crypt, authFlags, 0x02, 0x01, 0x00] : [0x02, authFlags];
+      await auth.writeValueWithoutResponse(new Uint8Array(req));
+      log('auth -> request random number ' + hex(new Uint8Array(req)));
+    });
+    log('AUTH ' + result.toUpperCase() + ' ✅');
+
+    const hrSvc = await srv.getPrimaryService('heart_rate');
+    window.__hrSvc = hrSvc;
+    const ch = await hrSvc.getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const v = e.target.value, f = v.getUint8(0);
+      const nb = (f & 1) ? v.getUint16(1, true) : v.getUint8(1);
+      pkts++;
+      if (nb !== bpm) beep();
+      bpm = nb; last = Date.now();
+    });
+    await ch.startNotifications();
+    log('HR notifications started');
+    $('startHr').click(); // stop manual, start continuous, ping every 12 s
+    let lastPk = 0;
+    clearInterval(window.__pkTimer);
+    window.__pkTimer = setInterval(() => {
+      log(pkts !== lastPk ? `packets: ${pkts}, bpm: ${bpm}` : `no HR packets in last 5 s (total ${pkts})`);
+      lastPk = pkts;
+    }, 5000);
+  } catch (e) { log('ERR ' + e.name + ': ' + e.message); }
+};
 </script>
 </body>
 </html>
