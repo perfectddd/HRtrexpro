@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HR Spike</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#212121; color:#fff; margin:0; padding:16px; }
+  #bpm { font-size: 30vw; font-weight: 700; text-align:center; line-height:1; }
+  #time { font-size: 10vw; text-align:center; }
+  button { font-size: 20px; padding: 12px 20px; margin: 6px 4px; border-radius: 8px; border:0; }
+  #log { font-size: 13px; white-space: pre-wrap; color:#bbb; max-height: 30vh; overflow:auto; }
+  video { width: 160px; border:1px solid #555; }
+</style>
+</head>
+<body>
+<h3>Spike: T-Rex Pro HR + PiP</h3>
+<div id="bpm">--</div>
+<div id="time">00:00</div>
+<div>
+  <button id="connect">Connect</button>
+  <button id="connectAll">Scan ทั้งหมด</button>
+  <button id="startHr">สั่งวัดต่อเนื่อง (2A39)</button>
+  <button id="pip">PiP</button>
+  <label><input type="checkbox" id="beep" checked> beep</label>
+</div>
+<div style="margin-top:8px; padding:8px; border:1px solid #555; border-radius:8px">
+  <b>Auth key (32 ตัวอักษร hex)</b><br>
+  <input id="authKey" placeholder="0123456789abcdef0123456789abcdef" style="width:100%; font-family:monospace; font-size:16px; padding:6px" autocomplete="off" spellcheck="false">
+  <label><input type="checkbox" id="cryptFlag" checked> ใช้ crypt flag 0x80 (นาฬิการุ่นใหม่)</label>
+  <label><input type="checkbox" id="rememberKey"> จำ key ในเบราว์เซอร์นี้</label><br>
+  <button id="authConnect">เชื่อมต่อ + ยืนยันตัว</button>
+</div>
+<canvas id="cv" width="320" height="180" hidden></canvas>
+<video id="vid" muted playsinline></video>
+<div id="log"></div>
+<script>
+const $ = id => document.getElementById(id);
+const log = m => { $('log').textContent = new Date().toLocaleTimeString() + ' ' + m + '\n' + $('log').textContent; };
+let bpm = null, last = null, t0 = Date.now(), ac = null, pkts = 0;
+log('bluetooth: ' + !!navigator.bluetooth + ', pip: ' + !!document.pictureInPictureEnabled + ', secure: ' + isSecureContext);
+
+function beep() {
+  if (!ac || !$('beep').checked) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.value = 880; g.gain.value = 0.2; o.connect(g).connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + 0.05);
+}
+
+$('connect').onclick = () => connect({ filters: [{ services: ['heart_rate'] }] });
+// Diagnostic: list every BLE device; still ask for heart_rate access once connected.
+$('connectAll').onclick = () => connect({ acceptAllDevices: true, optionalServices: ['heart_rate', 0xfee0, 0xfee1] });
+
+async function connect(options) {
+  try {
+    ac = ac || new AudioContext(); await ac.resume();
+    const dev = await navigator.bluetooth.requestDevice(options);
+    log('device: ' + dev.name + ' id=' + dev.id);
+    dev.addEventListener('gattserverdisconnected', () => log('DISCONNECTED'));
+    const srv = await dev.gatt.connect();
+    log('GATT connected');
+    try {
+      const all = await srv.getPrimaryServices();
+      log('services: ' + all.map(s => s.uuid.slice(4, 8)).join(', '));
+    } catch (e) { log('list services ERR ' + e.message); }
+    const hrSvc = await srv.getPrimaryService('heart_rate');
+    window.__hrSvc = hrSvc;
+    try {
+      const chars = await hrSvc.getCharacteristics();
+      log('heart_rate chars: ' + chars.map(c => c.uuid.slice(4, 8) + '[' + Object.entries(c.properties).filter(([, v]) => v === true).map(([k]) => k).join('/') + ']').join(', '));
+    } catch (e) { log('list chars ERR ' + e.message); }
+    const ch = await hrSvc.getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const v = e.target.value, f = v.getUint8(0);
+      const nb = (f & 1) ? v.getUint16(1, true) : v.getUint8(1);
+      pkts++;
+      if (nb !== bpm) beep();
+      bpm = nb; last = Date.now();
+    });
+    await ch.startNotifications();
+    log('notifications started');
+    let lastPk = 0;
+    clearInterval(window.__pkTimer);
+    window.__pkTimer = setInterval(() => {
+      if (pkts !== lastPk) log('packets: ' + pkts + ', bpm: ' + bpm);
+      else log('no HR packets in last 5 s (total ' + pkts + ')');
+      lastPk = pkts;
+    }, 5000);
+  } catch (e) { log('ERR ' + e.name + ': ' + e.message); }
+}
+
+// Huami-style HR control point: stop manual, start continuous, then keep-alive ping every 12 s.
+$('startHr').onclick = async () => {
+  try {
+    if (!window.__hrSvc) return log('connect first');
+    const cp = await window.__hrSvc.getCharacteristic('heart_rate_control_point');
+    const w = async bytes => {
+      await cp.writeValueWithResponse(new Uint8Array(bytes)).catch(() => cp.writeValue(new Uint8Array(bytes)));
+      log('wrote 2A39: ' + bytes.map(b => b.toString(16).padStart(2, '0')).join(' '));
+    };
+    await w([0x15, 0x02, 0x00]);
+    await w([0x15, 0x01, 0x00]);
+    await w([0x15, 0x01, 0x01]);
+    clearInterval(window.__ping);
+    window.__ping = setInterval(() => w([0x16]).catch(e => log('ping ERR ' + e.message)), 12000);
+  } catch (e) { log('2A39 ERR ' + e.name + ': ' + e.message); }
+};
+
+function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+function draw() {
+  const el = (Date.now() - t0) / 1000;
+  const stale = last && Date.now() - last > 3000;
+  $('bpm').textContent = bpm == null ? '--' : bpm + (stale ? '?' : '');
+  $('time').textContent = fmt(el);
+  const c = $('cv').getContext('2d');
+  c.fillStyle = stale ? '#424242' : '#c62828'; c.fillRect(0, 0, 320, 180);
+  c.fillStyle = '#fff'; c.font = 'bold 96px sans-serif'; c.fillText(bpm == null ? '--' : bpm, 16, 110);
+  c.font = '28px sans-serif'; c.fillText(fmt(el), 200, 60); c.fillText('#' + pkts, 200, 150);
+}
+setInterval(draw, 250);
+
+$('pip').onclick = async () => {
+  try {
+    const v = $('vid');
+    if (!v.srcObject) v.srcObject = $('cv').captureStream(4);
+    await v.play();
+    await v.requestPictureInPicture();
+    log('PiP opened');
+  } catch (e) { log('PiP ERR ' + e.message); }
+};
+document.addEventListener('visibilitychange', () => log('visibility: ' + document.visibilityState));
+
+// ---------------- Huami auth (uses the EXISTING key; never sends a new key) ----------------
+const FEE1 = '0000fee1-0000-1000-8000-00805f9b34fb';
+const FEE0 = '0000fee0-0000-1000-8000-00805f9b34fb';
+const AUTH_CHAR = '00000009-0000-3512-2118-0009af100700';
+const hex = b => [...new Uint8Array(b.buffer ?? b)].map(x => x.toString(16).padStart(2, '0')).join(' ');
+
+try {
+  const saved = localStorage.getItem('spikeAuthKey');
+  if (saved) { $('authKey').value = saved; $('rememberKey').checked = true; }
+} catch { /* storage unavailable */ }
+
+function parseKey(s) {
+  const clean = s.trim().replace(/^0x/i, '').replace(/[\s:-]/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(clean)) return null;
+  return new Uint8Array(clean.match(/../g).map(x => parseInt(x, 16)));
+}
+
+// AES-128-ECB of one 16-byte block via WebCrypto: CBC with a zero IV gives E(P) as the first block.
+async function aesEcbBlock(keyBytes, block) {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC' }, false, ['encrypt']);
+  const out = await crypto.subtle.encrypt({ name: 'AES-CBC', iv: new Uint8Array(16) }, key, block);
+  return new Uint8Array(out).slice(0, 16);
+}
+window.__aesEcbBlock = aesEcbBlock;
+
+$('authConnect').onclick = async () => {
+  const keyBytes = parseKey($('authKey').value);
+  if (!keyBytes) return log('ERR auth key ต้องเป็น hex 32 ตัวอักษร');
+  try {
+    if ($('rememberKey').checked) localStorage.setItem('spikeAuthKey', $('authKey').value.trim());
+    else localStorage.removeItem('spikeAuthKey');
+  } catch { /* ignore */ }
+  const crypt = $('cryptFlag').checked ? 0x80 : 0x00;
+  const authFlags = 0x00;
+  try {
+    ac = ac || new AudioContext(); await ac.resume();
+    const dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Amazfit' }, { services: [FEE0] }],
+      optionalServices: ['heart_rate', FEE0, FEE1],
+    });
+    log('device: ' + dev.name);
+    dev.addEventListener('gattserverdisconnected', () => { log('DISCONNECTED'); clearInterval(window.__ping); });
+    const srv = await dev.gatt.connect();
+    log('GATT connected');
+    const auth = await (await srv.getPrimaryService(FEE1)).getCharacteristic(AUTH_CHAR);
+
+    const result = await new Promise(async (resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('auth timeout (no reply in 8 s)')), 8000);
+      auth.addEventListener('characteristicvaluechanged', async e => {
+        const v = new Uint8Array(e.target.value.buffer);
+        log('auth <- ' + hex(v));
+        if (v[0] !== 0x10) return;
+        const cmd = v[1] & 0x0f, status = v[2];
+        try {
+          if (cmd === 0x02 && status === 0x01) {
+            const random = v.slice(3, 19);
+            const enc = await aesEcbBlock(keyBytes, random);
+            const msg = new Uint8Array([0x03 | crypt, authFlags, ...enc]);
+            await auth.writeValueWithoutResponse(msg);
+            log('auth -> send encrypted number');
+          } else if (cmd === 0x03 && status === 0x01) {
+            clearTimeout(timer); resolve('ok');
+          } else if (status !== 0x01) {
+            clearTimeout(timer); reject(new Error(`auth failed: cmd ${cmd} status ${status} (key ผิด หรือลองสลับ crypt flag)`));
+          }
+        } catch (err) { clearTimeout(timer); reject(err); }
+      });
+      await auth.startNotifications();
+      const req = crypt ? [0x02 | crypt, authFlags, 0x02, 0x01, 0x00] : [0x02, authFlags];
+      await auth.writeValueWithoutResponse(new Uint8Array(req));
+      log('auth -> request random number ' + hex(new Uint8Array(req)));
+    });
+    log('AUTH ' + result.toUpperCase() + ' ✅');
+
+    const hrSvc = await srv.getPrimaryService('heart_rate');
+    window.__hrSvc = hrSvc;
+    const ch = await hrSvc.getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const v = e.target.value, f = v.getUint8(0);
+      const nb = (f & 1) ? v.getUint16(1, true) : v.getUint8(1);
+      pkts++;
+      if (nb !== bpm) beep();
+      bpm = nb; last = Date.now();
+    });
+    await ch.startNotifications();
+    log('HR notifications started');
+    $('startHr').click(); // stop manual, start continuous, ping every 12 s
+    let lastPk = 0;
+    clearInterval(window.__pkTimer);
+    window.__pkTimer = setInterval(() => {
+      log(pkts !== lastPk ? `packets: ${pkts}, bpm: ${bpm}` : `no HR packets in last 5 s (total ${pkts})`);
+      lastPk = pkts;
+    }, 5000);
+  } catch (e) { log('ERR ' + e.name + ': ' + e.message); }
+};
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test hr-trainer/test/",
+    "test": "node --test \"hr-trainer/test/**/*.test.js\"",
     "serve": "python -m http.server 8080"
   }
 }
