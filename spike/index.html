@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HR Spike</title>
+<style>
+  body { font-family: system-ui, sans-serif; background:#212121; color:#fff; margin:0; padding:16px; }
+  #bpm { font-size: 30vw; font-weight: 700; text-align:center; line-height:1; }
+  #time { font-size: 10vw; text-align:center; }
+  button { font-size: 20px; padding: 12px 20px; margin: 6px 4px; border-radius: 8px; border:0; }
+  #log { font-size: 13px; white-space: pre-wrap; color:#bbb; max-height: 30vh; overflow:auto; }
+  video { width: 160px; border:1px solid #555; }
+</style>
+</head>
+<body>
+<h3>Spike: T-Rex Pro HR + PiP</h3>
+<div id="bpm">--</div>
+<div id="time">00:00</div>
+<div>
+  <button id="connect">Connect</button>
+  <button id="pip">PiP</button>
+  <label><input type="checkbox" id="beep" checked> beep</label>
+</div>
+<canvas id="cv" width="320" height="180" hidden></canvas>
+<video id="vid" muted playsinline></video>
+<div id="log"></div>
+<script>
+const $ = id => document.getElementById(id);
+const log = m => { $('log').textContent = new Date().toLocaleTimeString() + ' ' + m + '\n' + $('log').textContent; };
+let bpm = null, last = null, t0 = Date.now(), ac = null, pkts = 0;
+log('bluetooth: ' + !!navigator.bluetooth + ', pip: ' + !!document.pictureInPictureEnabled + ', secure: ' + isSecureContext);
+
+function beep() {
+  if (!ac || !$('beep').checked) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.value = 880; g.gain.value = 0.2; o.connect(g).connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + 0.05);
+}
+
+$('connect').onclick = async () => {
+  try {
+    ac = ac || new AudioContext(); await ac.resume();
+    const dev = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }] });
+    log('device: ' + dev.name);
+    dev.addEventListener('gattserverdisconnected', () => log('DISCONNECTED'));
+    const srv = await dev.gatt.connect();
+    const ch = await (await srv.getPrimaryService('heart_rate')).getCharacteristic('heart_rate_measurement');
+    ch.addEventListener('characteristicvaluechanged', e => {
+      const v = e.target.value, f = v.getUint8(0);
+      const nb = (f & 1) ? v.getUint16(1, true) : v.getUint8(1);
+      pkts++;
+      if (nb !== bpm) beep();
+      bpm = nb; last = Date.now();
+    });
+    await ch.startNotifications();
+    log('notifications started');
+  } catch (e) { log('ERR ' + e.message); }
+};
+
+function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+function draw() {
+  const el = (Date.now() - t0) / 1000;
+  const stale = last && Date.now() - last > 3000;
+  $('bpm').textContent = bpm == null ? '--' : bpm + (stale ? '?' : '');
+  $('time').textContent = fmt(el);
+  const c = $('cv').getContext('2d');
+  c.fillStyle = stale ? '#424242' : '#c62828'; c.fillRect(0, 0, 320, 180);
+  c.fillStyle = '#fff'; c.font = 'bold 96px sans-serif'; c.fillText(bpm == null ? '--' : bpm, 16, 110);
+  c.font = '28px sans-serif'; c.fillText(fmt(el), 200, 60); c.fillText('#' + pkts, 200, 150);
+}
+setInterval(draw, 250);
+
+$('pip').onclick = async () => {
+  try {
+    const v = $('vid');
+    if (!v.srcObject) v.srcObject = $('cv').captureStream(4);
+    await v.play();
+    await v.requestPictureInPicture();
+    log('PiP opened');
+  } catch (e) { log('PiP ERR ' + e.message); }
+};
+document.addEventListener('visibilitychange', () => log('visibility: ' + document.visibilityState));
+</script>
+</body>
+</html>
