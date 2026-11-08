@@ -98,8 +98,13 @@ export async function mount(root, ctx) {
     try {
       await src.connect();
     } catch (err) {
-      if (err?.name !== 'NotFoundError') showBanner(`เชื่อมต่อไม่สำเร็จ: ${err?.message || err}`);
-      else showBanner('ไม่พบนาฬิกา — เปิด "Heart rate sharing / broadcast" บนนาฬิกาก่อน (ดูวิธีในหน้าตั้งค่า)');
+      if (err?.name === 'NotFoundError') {
+        showBanner('ไม่ได้เลือกนาฬิกา — ถ้าไม่เห็นในรายการ ให้ปิด Bluetooth มือถือ (Zepp) ก่อน แล้วลองใหม่');
+      } else if (err?.name === 'AuthKeyMissing' || err?.name === 'AuthFailed') {
+        showBanner(`${err.message} (ไปที่ ⚙️ ตั้งค่า → นาฬิกา)`, 10000);
+      } else {
+        showBanner(`เชื่อมต่อไม่สำเร็จ: ${err?.message || err} — ปิด Bluetooth มือถือแล้วลองใหม่`, 10000);
+      }
     }
   }
 

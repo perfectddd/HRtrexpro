@@ -3,6 +3,7 @@ import { hrMaxFor, ZONE_COLORS } from '../zones.js';
 import { alertPlan } from '../alerts.js';
 import { ALERT_KEYS, DEFAULT_SETTINGS, withDefaults, boundsError } from '../settings-defaults.js';
 import { BleHeartRateSource } from '../hr-source.js';
+import { parseAuthKey } from '../huami-auth.js';
 
 const ALERT_LABELS = {
   countdown: 'นับถอยหลัง 3-2-1',
@@ -46,6 +47,19 @@ export async function mount(root, ctx) {
   const manualCb = h('input', { type: 'checkbox', checked: draft.hrMaxManual, onchange: e => { draft.hrMaxManual = e.target.checked; refreshDerived(); } });
   const boundInputs = draft.zoneBounds.map((b, i) => num(b, v => { draft.zoneBounds[i] = v; }, { min: 1, max: 120, style: { width: '64px' } }));
 
+  const keyStatus = h('div', { class: 'small' });
+  function updateKeyStatus() {
+    const v = draft.authKey.trim();
+    if (!v) { keyStatus.textContent = 'ยังไม่ได้ใส่ key'; keyStatus.style.color = 'var(--warn)'; }
+    else if (parseAuthKey(v)) { keyStatus.textContent = 'รูปแบบ key ถูกต้อง ✓'; keyStatus.style.color = 'var(--ok)'; }
+    else { keyStatus.textContent = 'ต้องเป็นเลขฐาน 16 จำนวน 32 ตัว'; keyStatus.style.color = 'var(--danger)'; }
+  }
+  const keyIn = h('input', {
+    type: 'password', class: 'grow', value: draft.authKey, autocomplete: 'off', spellcheck: false,
+    style: { fontFamily: 'monospace' },
+    oninput: e => { draft.authKey = e.target.value; updateKeyStatus(); },
+  });
+
   const alertRows = ALERT_KEYS.map(key => h('tr', {},
     h('td', {}, ALERT_LABELS[key]),
     CHANNELS.map(([ch]) => h('td', {}, h('input', {
@@ -74,6 +88,8 @@ export async function mount(root, ctx) {
     if (!draft.hrMaxManual && !(draft.age >= 10 && draft.age <= 100)) return flash('อายุต้องอยู่ระหว่าง 10–100', false);
     if (draft.hrMaxManual && !(draft.hrMax >= 100 && draft.hrMax <= 230)) return flash('HRmax ต้องอยู่ระหว่าง 100–230', false);
     if (!(draft.zoneHighRepeatSec >= 3)) return flash('ช่วงเตือนซ้ำต้องอย่างน้อย 3 วินาที', false);
+    if (draft.authKey.trim() && !parseAuthKey(draft.authKey)) return flash('auth key ต้องเป็นเลขฐาน 16 จำนวน 32 ตัว', false);
+    draft.authKey = draft.authKey.trim();
     await ctx.saveSettings(structuredClone(draft));
     flash('บันทึกแล้ว ✓');
   }
@@ -117,20 +133,28 @@ export async function mount(root, ctx) {
       h('label', {}, 'เตือนซ้ำเมื่ออยู่ Z5 / เกินเป้าทุก',
         num(draft.zoneHighRepeatSec, v => { draft.zoneHighRepeatSec = v; }, { min: 3, max: 120 }), 'วินาที')),
 
+    h('div', { class: 'card stack' },
+      h('h2', {}, 'นาฬิกา (Amazfit T-Rex Pro)'),
+      h('label', { style: { flexDirection: 'column', alignItems: 'stretch', width: '100%' } }, 'Auth key (hex 32 ตัวอักษร)',
+        h('div', { class: 'row' }, keyIn, h('button', { class: 'icon ghost', onclick: () => { keyIn.type = keyIn.type === 'password' ? 'text' : 'password'; } }, '👁'))),
+      keyStatus,
+      h('label', {}, h('input', { type: 'checkbox', checked: draft.authCrypt, onchange: e => { draft.authCrypt = e.target.checked; } }), 'ใช้ crypt flag 0x80 (T-Rex Pro ต้องเปิด)'),
+      h('div', { class: 'small' },
+        h('b', {}, 'วิธีหา auth key จากแอป Zepp'),
+        h('ol', {},
+          h('li', {}, 'Zepp → โปรไฟล์ (มุมขวาบน) → Settings → About'),
+          h('li', {}, 'แตะโลโก้ Zepp 10 ครั้ง → Network diagnostics → รอสักครู่'),
+          h('li', {}, 'Share logs → ส่งให้ Notify for smartwatch (หรือเก็บไฟล์ไว้แล้วค้นหาค่า auth key)')),
+        h('b', {}, 'ระหว่างฝึก'),
+        h('ul', {},
+          h('li', {}, 'ปิด Bluetooth มือถือ (หรือให้ Zepp หลุด) — นาฬิกาเชื่อมต่อได้ทีละเครื่อง'),
+          h('li', {}, 'กด ⌚ ในหน้าฝึก แล้วเลือก Amazfit T-Rex Pro')),
+        h('div', { class: 'muted' }, 'key เก็บไว้ในเครื่องนี้เท่านั้น ห้ามรีเซ็ตหรือ unpair นาฬิกา เพราะ key จะเปลี่ยน')),
+      h('button', { class: 'ghost', onclick: forget }, 'ลืมนาฬิกาที่เคยเชื่อมต่อ')),
+
     statusEl,
     h('button', { class: 'primary', style: { width: '100%' }, onclick: save }, '💾 บันทึกการตั้งค่า'),
-
-    h('div', { class: 'card stack' },
-      h('h2', {}, 'นาฬิกา'),
-      h('div', { class: 'small' },
-        h('b', {}, 'วิธีเปิดการส่งชีพจร (Heart Rate Broadcast) บน T-Rex Pro'),
-        h('ol', {},
-          h('li', {}, 'เปิดแอป Zepp → โปรไฟล์ → เลือก T-Rex Pro'),
-          h('li', {}, 'หาเมนู "แชร์อัตราการเต้นหัวใจ / Heart rate sharing" (บางเวอร์ชันอยู่ในการตั้งค่าออกกำลังกาย) แล้วเปิด'),
-          h('li', {}, 'บนนาฬิกา เริ่มโหมดออกกำลังกาย (เช่น Indoor / Free training) — นาฬิกาจะเริ่มส่งชีพจร'),
-          h('li', {}, 'กลับมาที่แอปนี้ กด ⌚ แล้วเลือกนาฬิกา')),
-        h('div', { class: 'muted' }, 'ชื่อเมนูอาจต่างกันตามเวอร์ชันเฟิร์มแวร์ หลังเปิดครั้งแรกแล้วไม่ต้องเปิด Zepp ระหว่างฝึก')),
-      h('button', { class: 'ghost', onclick: forget }, 'ลืมนาฬิกาที่เคยเชื่อมต่อ')),
   ));
+  updateKeyStatus();
   refreshDerived();
 }

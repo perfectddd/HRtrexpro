@@ -10,6 +10,7 @@ const FILES = [
   'js/alerts.js',
   'js/hr-parse.js',
   'js/hr-source.js',
+  'js/huami-auth.js',
   'js/pip.js',
   'js/session-recorder.js',
   'js/session-summary.js',

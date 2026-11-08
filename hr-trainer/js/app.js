@@ -2,6 +2,7 @@ import * as storage from './storage.js';
 import { AlertPlayer } from './alerts.js';
 import { BleHeartRateSource, DemoSource, isBluetoothSupported } from './hr-source.js';
 import { SessionRecorder } from './session-recorder.js';
+import { parseAuthKey } from './huami-auth.js';
 import { ask } from './ui/dom.js';
 import * as workoutScreen from './ui/workout-screen.js';
 import * as workoutsScreen from './ui/workouts-screen.js';
@@ -47,7 +48,9 @@ const ctx = {
     const want = kind === 'demo' ? DemoSource : BleHeartRateSource;
     if (!(ctx.source instanceof want)) {
       ctx.source?.disconnect();
-      ctx.source = new want();
+      ctx.source = kind === 'demo'
+        ? new DemoSource()
+        : new BleHeartRateSource(() => ({ key: parseAuthKey(ctx.settings.authKey), crypt: ctx.settings.authCrypt }));
     }
     return ctx.source;
   },

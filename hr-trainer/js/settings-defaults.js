@@ -9,6 +9,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   zoneBounds: [50, 60, 70, 80, 90, 100],
   muted: false,
   zoneHighRepeatSec: 10,
+  authKey: '',      // Huami/Zepp auth key (hex), stored only on this device
+  authCrypt: true,  // crypt flag 0x80 — required on T-Rex Pro
   alerts: Object.fromEntries(ALERT_KEYS.map(k => [k, on()])),
 });
 

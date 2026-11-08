@@ -21,6 +21,13 @@ test('withDefaults fills missing alert keys and keeps stored values', () => {
   assert.deepEqual(s.zoneBounds, [50, 60, 70, 80, 90, 100]);
 });
 
+test('defaults include an empty auth key and crypt flag on', () => {
+  const s = withDefaults();
+  assert.equal(s.authKey, '');
+  assert.equal(s.authCrypt, true);
+  assert.equal(withDefaults({ authCrypt: false }).authCrypt, false);
+});
+
 test('withDefaults does not share arrays with DEFAULT_SETTINGS', () => {
   const s = withDefaults();
   s.zoneBounds[0] = 1;
