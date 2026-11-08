@@ -32,6 +32,22 @@ export class SessionRecorder {
     }
   }
 
+  // Record one sample per whole active second up to activeSec. Seconds missed
+  // (e.g. throttled timers in the background) are filled with bpm:null.
+  recordUpTo(activeSec, { bpm, zone, stepIndex }) {
+    const target = Math.floor(activeSec);
+    const samples = this.session.samples;
+    while (samples.length < target) {
+      const last = samples.length === target - 1;
+      this.addSample({
+        t: samples.length,
+        bpm: last ? bpm : null,
+        zone: last ? zone : 0,
+        stepIndex: last ? stepIndex : samples.at(-1)?.stepIndex ?? stepIndex,
+      });
+    }
+  }
+
   markStep({ name, kind, startT }) {
     const prev = this.session.steps.at(-1);
     if (prev && prev.endT == null) prev.endT = startT;

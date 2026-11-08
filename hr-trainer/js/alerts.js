@@ -34,6 +34,17 @@ export function alertPlan(event, settings) {
   };
 }
 
+// When timers were throttled, one tick can return several steps' worth of
+// events. Only announce what is current: from the last stepStart onward, or
+// just the latest countdown if no step changed.
+export function alertableEvents(events) {
+  let lastStart = -1;
+  events.forEach((e, i) => { if (e.type === 'stepStart') lastStart = i; });
+  if (lastStart >= 0) return events.slice(lastStart);
+  const countdowns = events.filter(e => e.type === 'countdown');
+  return countdowns.length ? [countdowns.at(-1)] : [];
+}
+
 // Watches zone vs. a step's target zone and emits zoneHigh / belowTarget.
 export class TargetMonitor {
   constructor({ repeatSec, belowSec = 10 }) {

@@ -34,6 +34,16 @@ test('recorder checkpoints every 30 samples', () => {
   assert.equal(snaps[0].workoutName, 'W');
 });
 
+test('recordUpTo fills missed seconds with null and keeps 1 Hz alignment', () => {
+  const r = new SessionRecorder({ workoutId: null, workoutName: 'W', startedAt: 0 });
+  r.recordUpTo(1.2, { bpm: 100, zone: 1, stepIndex: 0 });
+  assert.deepEqual(r.snapshot().samples.map(x => [x.t, x.bpm]), [[0, 100]]);
+  r.recordUpTo(1.9, { bpm: 101, zone: 1, stepIndex: 0 });
+  assert.equal(r.snapshot().samples.length, 1);
+  r.recordUpTo(5.0, { bpm: 120, zone: 2, stepIndex: 1 });
+  assert.deepEqual(r.snapshot().samples.map(x => [x.t, x.bpm]), [[0, 100], [1, null], [2, null], [3, null], [4, 120]]);
+});
+
 test('markStep closes the previous step', () => {
   const r = new SessionRecorder({ workoutId: null, workoutName: 'อิสระ', startedAt: 0 });
   r.markStep({ name: 'a', kind: 'work', startT: 0 });

@@ -2,7 +2,7 @@ import { h, fmtTime, ask } from './dom.js';
 import { zoneFor, hrMaxFor, pctOfMax, ZoneDetector, ZONE_COLORS, ZONE_NAMES } from '../zones.js';
 import { flattenWorkout } from '../workout-model.js';
 import { WorkoutTimer } from '../workout-timer.js';
-import { alertPlan, TargetMonitor } from '../alerts.js';
+import { alertPlan, TargetMonitor, alertableEvents } from '../alerts.js';
 import { SessionRecorder } from '../session-recorder.js';
 import { PipView } from '../pip.js';
 
@@ -62,9 +62,18 @@ export async function mount(root, ctx) {
 
   // ---------- Source ----------
   const onHr = e => { lastHr = { bpm: e.detail.bpm, t: Date.now() }; };
+  let dropAlerted = false;
   const onStatus = e => {
     connState = e.detail.state;
-    if (connState === 'disconnected' && session) fire({ type: 'disconnect' });
+    if (connState === 'connected') {
+      if (dropAlerted) showBanner('เชื่อมต่อนาฬิกาอีกครั้งแล้ว', 3000);
+      dropAlerted = false;
+    } else if (session && !dropAlerted) {
+      // Alert once per drop, as soon as the link is lost (not after retries).
+      dropAlerted = true;
+      fire({ type: 'disconnect' });
+      showBanner('นาฬิกาหลุดการเชื่อมต่อ — กำลังเชื่อมต่อใหม่… (เวลายังเดินต่อ)', 60000);
+    }
   };
   let bound = null;
   function bind(src) {
@@ -150,8 +159,8 @@ export async function mount(root, ctx) {
       recorder,
       detector: new ZoneDetector(),
       monitor: new TargetMonitor({ repeatSec: ctx.settings.zoneHighRepeatSec }),
-      sampleIndex: 0,
     };
+    ctx.sessionActive = true;
     document.body.classList.add('in-workout');
     handle(session.timer.start(now));
     requestWakeLock();
@@ -181,33 +190,45 @@ export async function mount(root, ctx) {
 
   async function finish() {
     const s = session;
+    if (!s) return;
     session = null;
-    const endT = s.timer.getState(Date.now()).totalElapsedSec;
-    const result = s.recorder.finish(Date.now(), Math.round(endT * 10) / 10);
-    await storage.saveSession(result);
-    await storage.clearCheckpoint();
+    ctx.sessionActive = false;
     wakeLock?.release?.().catch(() => {});
     wakeLock = null;
     pip?.close();
     document.body.classList.remove('in-workout');
-    ctx.navigate(`#/summary/${result.id}`);
+    const endT = s.timer.getState(Date.now()).totalElapsedSec;
+    const lastBpm = currentBpm(Date.now());
+    const lastZone = lastBpm == null ? 0 : zoneFor(lastBpm, hrMaxFor(ctx.settings), ctx.settings.zoneBounds);
+    s.recorder.recordUpTo(endT, { bpm: lastBpm, zone: lastZone, stepIndex: s.timer.index });
+    const result = s.recorder.finish(Date.now(), Math.round(endT * 10) / 10);
+    try {
+      await storage.saveSession(result);
+      await storage.clearCheckpoint();
+      ctx.navigate(`#/summary/${result.id}`);
+    } catch (err) {
+      // The 30 s checkpoint is still stored, so recovery on next launch keeps most of it.
+      showBanner(`บันทึกการฝึกไม่สำเร็จ: ${err?.message || err} — เปิดแอปใหม่เพื่อกู้คืน`, 15000);
+    }
   }
 
   function handle(events) {
+    if (!session || !events.length) return;
     for (const e of events) {
       if (e.type === 'stepStart') {
-        const t = session.timer.getState(Date.now()).totalElapsedSec;
-        session.recorder.markStep({ name: e.step.name, kind: e.step.kind, startT: Math.round(t * 10) / 10 });
+        session.recorder.markStep({ name: e.step.name, kind: e.step.kind, startT: Math.round(e.t * 10) / 10 });
         session.monitor.reset();
+      }
+    }
+    for (const e of alertableEvents(events)) {
+      if (e.type === 'stepStart') {
         if (e.index > 0 || e.step.kind === 'work') fire({ type: 'stepStart', kind: e.step.kind });
         pop(e.step.name);
       } else if (e.type === 'countdown') {
         fire(e);
-      } else if (e.type === 'finished') {
-        finish();
-        return;
       }
     }
+    if (events.some(e => e.type === 'finished')) finish();
   }
 
   function toggleMute() {
@@ -233,7 +254,7 @@ export async function mount(root, ctx) {
     const hrMax = hrMaxFor(ctx.settings);
     const zone = bpm == null ? 0 : zoneFor(bpm, hrMax, ctx.settings.zoneBounds);
     const st = session.timer.getState(now);
-    session.recorder.addSample({ t: session.sampleIndex++, bpm, zone, stepIndex: st.stepIndex });
+    session.recorder.recordUpTo(st.totalElapsedSec, { bpm, zone, stepIndex: st.stepIndex });
     if (bpm == null) return;
     const change = session.detector.update(zone, now);
     if (change) {
@@ -306,7 +327,10 @@ export async function mount(root, ctx) {
     clearInterval(slow);
     document.removeEventListener('visibilitychange', onVisibility);
     bind(null);
-    if (session) storage.saveCheckpoint(session.recorder.snapshot());
+    if (session) {
+      ctx.sessionActive = false;
+      storage.saveCheckpoint(session.recorder.snapshot()).catch(() => {});
+    }
     wakeLock?.release?.().catch(() => {});
     pip?.close();
   };

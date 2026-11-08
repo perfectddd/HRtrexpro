@@ -97,6 +97,18 @@ test('stop emits finished', () => {
   assert.ok(Math.abs(t.getState(ms(9)).totalElapsedSec - 3) < 1e-9);
 });
 
+test('stepStart and countdown carry their boundary active time t', () => {
+  const t = new WorkoutTimer([S('A', 10), S('B', 5), S('C', 5)]);
+  assert.equal(t.start(0)[0].t, 0);
+  const ev = t.tick(ms(30));
+  const starts = ev.filter(e => e.type === 'stepStart').map(e => e.t);
+  assert.deepEqual(starts, [10, 15]);
+  assert.deepEqual(ev.filter(e => e.type === 'countdown').map(e => e.t), [7, 8, 9, 12, 13, 14, 17, 18, 19]);
+  const t2 = new WorkoutTimer(steps());
+  t2.start(0); t2.tick(ms(10));
+  assert.equal(t2.skip(ms(25))[0].t, 25);
+});
+
 test('countdown skipped when step shorter than n', () => {
   const t = new WorkoutTimer([S('A', 2), S('B', 10)]);
   t.start(0);

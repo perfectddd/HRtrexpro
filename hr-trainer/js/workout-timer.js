@@ -24,13 +24,13 @@ export class WorkoutTimer {
     this.index = index;
     this._stepStartActive = activeMs;
     this._fired = new Set();
-    return { type: 'stepStart', index, step: this.steps[index] };
+    return { type: 'stepStart', index, step: this.steps[index], t: activeMs / 1000 };
   }
 
   _finish(activeMs) {
     this.status = 'finished';
     this._finishedActive = activeMs;
-    return { type: 'finished' };
+    return { type: 'finished', t: activeMs / 1000 };
   }
 
   start(nowMs) {
@@ -77,7 +77,7 @@ export class WorkoutTimer {
       for (let n = 3; n >= 1; n--) {
         if (n < dur && !this._fired.has(n) && elapsed >= durMs - n * 1000) {
           this._fired.add(n);
-          events.push({ type: 'countdown', n });
+          events.push({ type: 'countdown', n, t: (this._stepStartActive + durMs - n * 1000) / 1000 });
         }
       }
       if (elapsed < durMs) break;

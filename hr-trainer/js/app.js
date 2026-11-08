@@ -27,6 +27,7 @@ const ctx = {
   settings: null,
   player: new AlertPlayer(),
   source: null,
+  sessionActive: false,
   bluetoothSupported: isBluetoothSupported(),
   flashEl: document.getElementById('flash'),
   params: [],
@@ -57,8 +58,17 @@ function parseHash() {
   return { name: ROUTES[name] ? name : 'workout', params: params.map(decodeURIComponent) };
 }
 
+let currentHash = null;
+
 async function render() {
   const { name, params } = parseHash();
+  // A running workout must not be torn down by Back / a stray hash change:
+  // put the URL back and keep the screen mounted. (Leave via ⏹ จบ.)
+  if (ctx.sessionActive && currentHash && location.hash !== currentHash) {
+    history.pushState(null, '', currentHash);
+    return;
+  }
+  currentHash = location.hash || '#/workout';
   unmount?.();
   unmount = null;
   document.body.classList.remove('in-workout');
@@ -70,9 +80,21 @@ async function render() {
     a.classList.toggle('active', active);
   }
   unmount = (await ROUTES[name].mount(root, ctx)) || null;
+  if (name === 'workout') offerRecovery();
 }
 
+let offering = false;
 async function offerRecovery() {
+  if (offering || ctx.sessionActive) return;
+  offering = true;
+  try {
+    await recover();
+  } finally {
+    offering = false;
+  }
+}
+
+async function recover() {
   const cp = await storage.getCheckpoint();
   if (!cp) return;
   const choice = await ask(
@@ -100,7 +122,7 @@ async function init() {
   await storage.ensureSeedWorkouts();
   window.addEventListener('hashchange', render);
   await render();
-  await offerRecovery();
+  if (parseHash().name !== 'workout') await offerRecovery();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed', err));
   }

@@ -35,6 +35,8 @@ export function ask(message, buttons) {
   document.getElementById('dialog-msg').textContent = message;
   const row = document.getElementById('dialog-btns');
   row.replaceChildren(...buttons.map(b => h('button', { value: b.value, class: b.class || '' }, b.label)));
+  // Reset so a cancel (Esc / Android back) never reuses the previous answer.
+  dlg.returnValue = '';
   return new Promise(resolve => {
     dlg.addEventListener('close', () => resolve(dlg.returnValue), { once: true });
     dlg.showModal();

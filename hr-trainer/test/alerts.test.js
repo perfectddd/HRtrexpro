@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alertPlan, TargetMonitor } from '../js/alerts.js';
+import { alertPlan, TargetMonitor, alertableEvents } from '../js/alerts.js';
 import { withDefaults } from '../js/settings-defaults.js';
 
 test('work start plan', () => {
@@ -29,6 +29,22 @@ test('event mapping for the rest of the table', () => {
   assert.deepEqual(alertPlan({ type: 'zoneHigh' }, st), { sound: 'warn', vibrate: [200], flash: '#f44336' });
   assert.deepEqual(alertPlan({ type: 'belowTarget' }, st), { sound: 'soft', vibrate: null, flash: null });
   assert.deepEqual(alertPlan({ type: 'disconnect' }, st), { sound: 'alarm', vibrate: [500], flash: null });
+});
+
+test('alertableEvents: a caught-up batch only announces from the last stepStart', () => {
+  const ev = [
+    { type: 'countdown', n: 3 }, { type: 'countdown', n: 2 }, { type: 'countdown', n: 1 },
+    { type: 'stepStart', kind: 'work', index: 1 },
+    { type: 'countdown', n: 3 }, { type: 'stepStart', kind: 'rest', index: 2 }, { type: 'countdown', n: 3 },
+  ];
+  assert.deepEqual(alertableEvents(ev), ev.slice(5));
+});
+
+test('alertableEvents: several countdowns without a step change keep only the last', () => {
+  const ev = [{ type: 'countdown', n: 3 }, { type: 'countdown', n: 2 }];
+  assert.deepEqual(alertableEvents(ev), [ev[1]]);
+  assert.deepEqual(alertableEvents([ev[0]]), [ev[0]]);
+  assert.deepEqual(alertableEvents([]), []);
 });
 
 test('muted removes only sound', () => {
