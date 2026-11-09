@@ -200,7 +200,8 @@ $('listenAll').onclick = async () => {
     catch (e) { log(`list ${svcId.slice(4, 8)} ERR ${e.message}`); continue; }
     for (const ch of chars) {
       const p = ch.properties;
-      const props = Object.entries(p).filter(([, v]) => v === true).map(([k]) => k).join('/');
+      // Properties are prototype getters, so Object.entries() sees nothing; list them explicitly.
+      const props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter(k => p[k]).join('/');
       log(`char ${svcId.slice(4, 8)}/${short(ch.uuid)} [${props}]`);
       if (!(p.notify || p.indicate) || ch.uuid === AUTH_CHAR) continue;
       ch.addEventListener('characteristicvaluechanged', e => {
