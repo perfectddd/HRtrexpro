@@ -30,6 +30,7 @@
   <label><input type="checkbox" id="cryptFlag" checked> ใช้ crypt flag 0x80 (นาฬิการุ่นใหม่)</label>
   <label><input type="checkbox" id="rememberKey"> จำ key ในเบราว์เซอร์นี้</label><br>
   <button id="authConnect">เชื่อมต่อ + ยืนยันตัว</button>
+  <button id="readTime">อ่านเวลานาฬิกา</button>
 </div>
 <canvas id="cv" width="320" height="180" hidden></canvas>
 <video id="vid" muted playsinline></video>
@@ -155,6 +156,34 @@ async function aesEcbBlock(keyBytes, block) {
 }
 window.__aesEcbBlock = aesEcbBlock;
 
+// Read the watch's Current Time (0x2A2B): try service fee0 (Huami), then 0x1805 (standard).
+$('readTime').onclick = async () => {
+  const srv = window.__srv;
+  if (!srv?.connected) return log('ต้องกด "เชื่อมต่อ + ยืนยันตัว" ก่อน');
+  for (const svcId of [FEE0, 'current_time']) {
+    try {
+      const svc = await srv.getPrimaryService(svcId);
+      const ch = await svc.getCharacteristic(0x2a2b);
+      const before = Date.now();
+      const v = await ch.readValue();
+      const after = Date.now();
+      const b = new Uint8Array(v.buffer);
+      log(`time[${svcId === FEE0 ? 'fee0' : '1805'}] raw (${b.length} bytes): ${hex(b)}`);
+      if (b.length >= 7) {
+        const y = v.getUint16(0, true), mo = b[2], d = b[3], hh = b[4], mi = b[5], ss = b[6];
+        const tz = b.length >= 11 ? (b[10] << 24 >> 24) : null; // int8, quarter hours
+        const watch = new Date(y, mo - 1, d, hh, mi, ss);
+        const offset = Math.round((watch.getTime() - (before + after) / 2) / 1000);
+        const p = n => String(n).padStart(2, '0');
+        log(`watch time: ${y}-${p(mo)}-${p(d)} ${p(hh)}:${p(mi)}:${p(ss)}  dow=${b[7] ?? '-'}  tz=${tz == null ? '-' : tz / 4 + 'h'}  | PC: ${new Date(after).toLocaleTimeString()}  | ต่างกัน ${offset} วิ`);
+      }
+      return;
+    } catch (e) {
+      log(`time[${svcId === FEE0 ? 'fee0' : '1805'}] ERR ${e.name}: ${e.message}`);
+    }
+  }
+};
+
 $('authConnect').onclick = async () => {
   const keyBytes = parseKey($('authKey').value);
   if (!keyBytes) return log('ERR auth key ต้องเป็น hex 32 ตัวอักษร');
@@ -168,11 +197,12 @@ $('authConnect').onclick = async () => {
     ac = ac || new AudioContext(); await ac.resume();
     const dev = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'Amazfit' }, { services: [FEE0] }],
-      optionalServices: ['heart_rate', FEE0, FEE1],
+      optionalServices: ['heart_rate', FEE0, FEE1, 'current_time'],
     });
     log('device: ' + dev.name);
     dev.addEventListener('gattserverdisconnected', () => { log('DISCONNECTED'); clearInterval(window.__ping); });
     const srv = await dev.gatt.connect();
+    window.__srv = srv;
     log('GATT connected');
     const auth = await (await srv.getPrimaryService(FEE1)).getCharacteristic(AUTH_CHAR);
 
