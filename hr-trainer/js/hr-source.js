@@ -3,6 +3,7 @@ import {
   FEE0, FEE1, AUTH_CHAR, HR_START_SEQUENCE, HR_PING, HR_PING_INTERVAL_MS,
   authRequest, authResponse, parseAuthReply, aesEcbBlock,
 } from './huami-auth.js';
+import { CURRENT_TIME_CHAR, WATCH_TIME_REFRESH_MS, parseCurrentTime, watchOffsetMs } from './watch-time.js';
 
 const BACKOFF = [1000, 2000, 4000, 8000, 10000];
 
@@ -87,8 +88,11 @@ export class BleHeartRateSource extends BaseSource {
       const { bpm, rr } = parseHeartRate(e.target.value);
       this._hr(bpm, rr);
     };
+    this.watchOffsetMs = null;
+    this._clockTimer = null;
     this._onDisconnected = () => {
       clearInterval(this._ping);
+      clearInterval(this._clockTimer);
       this._scheduleReconnect(0, 0);
     };
   }
@@ -155,6 +159,27 @@ export class BleHeartRateSource extends BaseSource {
     }
     if (!this._wantConnected) return;
     this._status('connected');
+    this._startWatchClock(server);
+  }
+
+  // Read the watch's clock now and every 5 minutes; emits 'watchtime' {offsetMs, tzQuarterHours}.
+  _startWatchClock(server) {
+    clearInterval(this._clockTimer);
+    const read = async () => {
+      try {
+        const ch = await (await server.getPrimaryService(FEE0)).getCharacteristic(CURRENT_TIME_CHAR);
+        const start = Date.now();
+        const value = await ch.readValue();
+        const t = parseCurrentTime(new Uint8Array(value.buffer));
+        if (!t) return;
+        this.watchOffsetMs = watchOffsetMs(t, start, Date.now());
+        this.dispatchEvent(new CustomEvent('watchtime', { detail: { offsetMs: this.watchOffsetMs, tzQuarterHours: t.tzQuarterHours } }));
+      } catch {
+        // Not every watch exposes its clock; the UI simply shows no watch time.
+      }
+    };
+    read();
+    this._clockTimer = setInterval(read, WATCH_TIME_REFRESH_MS);
   }
 
   _scheduleReconnect(attempt, failures) {
@@ -183,6 +208,7 @@ export class BleHeartRateSource extends BaseSource {
     this._wantConnected = false;
     clearTimeout(this._timer);
     clearInterval(this._ping);
+    clearInterval(this._clockTimer);
     if (this.device?.gatt?.connected) this.device.gatt.disconnect();
     this._status('disconnected');
   }
@@ -209,6 +235,9 @@ export class DemoSource extends BaseSource {
   connect() {
     this._t0 = Date.now();
     this._status('connected');
+    // Pretend the watch clock is 3 s slow so the drift UI can be seen in Demo.
+    this.watchOffsetMs = -3000;
+    this.dispatchEvent(new CustomEvent('watchtime', { detail: { offsetMs: this.watchOffsetMs, tzQuarterHours: null } }));
     clearInterval(this._timer);
     this._timer = setInterval(() => {
       const t = (Date.now() - this._t0) / 1000;

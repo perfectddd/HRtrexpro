@@ -19,6 +19,7 @@ const FILES = [
   'js/workout-model.js',
   'js/workout-timer.js',
   'js/zones.js',
+  'js/watch-time.js',
   'js/ui/charts.js',
   'js/ui/dom.js',
   'js/ui/workout-screen.js',

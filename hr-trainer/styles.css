@@ -110,6 +110,8 @@ body.in-workout .ws { height: 100vh; height: 100dvh; }
 .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--danger); flex: none; }
 .dot.connected { background: var(--ok); }
 .dot.reconnecting { background: var(--warn); }
+.watch-clock { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.watch-clock .muted { font-size: 13px; font-weight: 400; color: inherit; opacity: .8; }
 .ws-zone { text-align: center; font-size: 22px; font-weight: 600; margin-top: 8px; }
 .ws-zone .pct { opacity: .8; font-weight: 400; }
 .ws-bpm {

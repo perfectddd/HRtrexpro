@@ -65,6 +65,13 @@ export class PipView {
     c.font = '20px system-ui, sans-serif';
     c.fillText(`รวม ${fmtTime(v.totalElapsedSec)}`, W - 12, 150);
 
+    if (v.watchClock) {
+      c.textAlign = 'left';
+      c.font = 'bold 18px system-ui, sans-serif';
+      c.fillStyle = '#fff';
+      c.fillText(`⌚ ${v.watchClock}`, 12, 26);
+    }
+
     c.fillStyle = DOT[v.connection] ?? DOT.disconnected;
     c.beginPath();
     c.arc(W - 16, 18, 7, 0, Math.PI * 2);

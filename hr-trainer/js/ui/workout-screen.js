@@ -5,6 +5,7 @@ import { WorkoutTimer } from '../workout-timer.js';
 import { alertPlan, TargetMonitor, alertableEvents } from '../alerts.js';
 import { SessionRecorder } from '../session-recorder.js';
 import { PipView } from '../pip.js';
+import { formatClock, describeDrift } from '../watch-time.js';
 
 const STALE_MS = 3000;
 const STATUS_TEXT = { connected: 'เชื่อมต่อแล้ว', reconnecting: 'กำลังเชื่อมต่อใหม่…', disconnected: 'ไม่ได้เชื่อมต่อ' };
@@ -27,6 +28,7 @@ export async function mount(root, ctx) {
     workouts.map(w => h('option', { value: w.id, selected: w.id === selectedId }, w.name)));
   const dot = h('span', { class: 'dot' });
   const devName = h('span', { class: 'small' });
+  const watchClockEl = h('span', { class: 'watch-clock' });
   const btnBle = h('button', { class: 'icon', title: 'เชื่อมต่อนาฬิกา', onclick: () => connect('ble') }, '⌚');
   const btnDemo = h('button', { class: 'icon', title: 'โหมดจำลอง', onclick: () => connect('demo') }, 'Demo');
   const zoneEl = h('div', { class: 'ws-zone' });
@@ -47,7 +49,7 @@ export async function mount(root, ctx) {
 
   const screen = h('div', { class: 'ws' },
     h('div', { class: 'ws-top' }, select, btnBle, btnDemo, dot),
-    h('div', { class: 'row small hide-compact', style: { marginTop: '4px', justifyContent: 'flex-end' } }, devName),
+    h('div', { class: 'row small hide-compact', style: { marginTop: '4px', justifyContent: 'space-between' } }, watchClockEl, devName),
     !ctx.bluetoothSupported && h('div', { class: 'ws-banner' },
       'เบราว์เซอร์นี้ใช้ Web Bluetooth ไม่ได้ — เปิดด้วย Chrome บน Android ผ่าน HTTPS หรือกด Demo เพื่อทดลอง'),
     zoneEl, bpmEl, arrowEl,
@@ -288,6 +290,14 @@ export async function mount(root, ctx) {
     arrowEl.textContent = now < belowUntil ? '⬆ เร่งขึ้น' : '';
     dot.className = `dot ${connState}`;
     devName.textContent = `${bound?.deviceName ?? ''} ${STATUS_TEXT[connState]}`.trim();
+    const offset = bound?.watchOffsetMs ?? null;
+    const watchClock = offset == null ? null : formatClock(now, offset);
+    if (watchClock) {
+      const drift = describeDrift(offset);
+      watchClockEl.replaceChildren(`⌚ ${watchClock}`, drift ? h('span', { class: 'muted' }, ` · ${drift}`) : '');
+    } else {
+      watchClockEl.replaceChildren();
+    }
 
     const running = !!session;
     const st = session?.timer.getState(now);
@@ -320,6 +330,7 @@ export async function mount(root, ctx) {
       stepRemainingSec: st ? st.stepRemainingSec ?? st.stepElapsedSec : null,
       totalElapsedSec: st ? st.totalElapsedSec : 0,
       connection: connState,
+      watchClock,
     });
   }
 

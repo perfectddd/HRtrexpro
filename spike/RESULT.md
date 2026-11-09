@@ -27,6 +27,12 @@ Notes:
 
 Main app (`hr-trainer/`) with the auth key in Settings: ✅ confirmed working on the PC browser by the user (2026-11-08).
 
+## Watch clock — ✅ readable (2026-11-09)
+Service `fee0`, characteristic `2a2b` (read): 11 bytes, e.g. `ea 07 0b 09 14 06 25 01 00 00 1c`.
+The fields are year u16 LE, month, day, hour, minute, second, day of week (1 = Monday), fractions, adjust reason, and timezone int8 in quarter hours.
+In this example that is 2026-11-09 20:06:37, Monday, UTC+7.
+The value is whole seconds only, so the app assumes mid-second (+500 ms).
+
 ## S2 — PiP opens: ✅ on desktop Chrome (not yet tested on Android)
 ## S3 — PiP keeps updating with YouTube on top: ⏳ not tested yet (needs Android device)
 
