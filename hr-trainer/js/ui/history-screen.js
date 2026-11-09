@@ -1,4 +1,4 @@
-import { h, fmtTime, fmtDate, confirmDelete } from './dom.js';
+import { h, fmtTime, fmtDate, confirmDelete, icon } from './dom.js';
 
 export async function mount(root, ctx) {
   const { storage } = ctx;
@@ -26,7 +26,7 @@ export async function mount(root, ctx) {
                 render();
               }
             },
-          }, '🗑')),
+          }, icon('trash'))),
       )),
     ));
   }

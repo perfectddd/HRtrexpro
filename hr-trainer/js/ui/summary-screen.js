@@ -1,4 +1,4 @@
-import { h, fmtTime, fmtDate, confirmDelete, download } from './dom.js';
+import { h, fmtTime, fmtDate, confirmDelete, download, icon } from './dom.js';
 import { drawHrChart, drawZoneBars } from './charts.js';
 import { toCsv } from '../session-summary.js';
 
@@ -38,15 +38,15 @@ export async function mount(root, ctx) {
     h('h2', {}, 'ชีพจรตามเวลา'),
     hrCanvas,
     h('div', { class: 'row' },
-      h('button', { onclick: () => download(`${base}.csv`, toCsv(session), 'text/csv') }, '⬇ CSV'),
-      h('button', { onclick: () => download(`${base}.json`, JSON.stringify(session, null, 2), 'application/json') }, '⬇ JSON'),
+      h('button', { onclick: () => download(`${base}.csv`, toCsv(session), 'text/csv') }, icon('download'), 'CSV'),
+      h('button', { onclick: () => download(`${base}.json`, JSON.stringify(session, null, 2), 'application/json') }, icon('download'), 'JSON'),
       h('span', { class: 'grow' }),
-      h('button', { class: 'danger', onclick: remove }, '🗑 ลบ')),
+      h('button', { class: 'danger', onclick: remove }, icon('trash'), 'ลบ')),
     h('button', { class: 'primary', style: { width: '100%' }, onclick: () => ctx.navigate('#/history') }, 'ดูประวัติทั้งหมด'),
   ));
 
   const draw = () => {
-    drawZoneBars(zoneCanvas, s.zoneSec);
+    drawZoneBars(zoneCanvas, s.zoneSec, ctx.settings);
     drawHrChart(hrCanvas, session, ctx.settings);
   };
   draw();

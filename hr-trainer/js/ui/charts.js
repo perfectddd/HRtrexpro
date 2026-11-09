@@ -1,4 +1,4 @@
-import { ZONE_COLORS, hrMaxFor } from '../zones.js';
+import { hrMaxFor, zoneColorFor } from '../zones.js';
 import { KIND_COLORS } from '../workout-model.js';
 import { fmtTime } from './dom.js';
 
@@ -37,7 +37,7 @@ export function drawHrChart(canvas, session, settings) {
     const top = Math.min(hi, bounds[z]);
     const bottom = Math.max(lo, bounds[z - 1]);
     if (top <= bottom) continue;
-    c.fillStyle = ZONE_COLORS[z] + '33';
+    c.fillStyle = zoneColorFor(z, settings) + '33';
     c.fillRect(pad.l, y(top), w - pad.l - pad.r, y(bottom) - y(top));
   }
 
@@ -97,7 +97,7 @@ export function drawHrChart(canvas, session, settings) {
 }
 
 // Horizontal bars: time spent in each zone.
-export function drawZoneBars(canvas, zoneSec) {
+export function drawZoneBars(canvas, zoneSec, settings) {
   const rowH = 30;
   const { c, w } = setup(canvas, rowH * 5 + 8);
   const max = Math.max(1, ...zoneSec);
@@ -111,7 +111,7 @@ export function drawZoneBars(canvas, zoneSec) {
     c.textAlign = 'left';
     c.fillText(`Z${z}`, 8, yMid);
     const barW = ((w - labelW - valueW - 16) * zoneSec[z - 1]) / max;
-    c.fillStyle = ZONE_COLORS[z];
+    c.fillStyle = zoneColorFor(z, settings);
     c.fillRect(labelW, yMid - 9, Math.max(barW, zoneSec[z - 1] ? 2 : 0), 18);
     c.fillStyle = '#ddd';
     c.textAlign = 'right';

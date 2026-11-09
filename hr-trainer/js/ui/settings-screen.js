@@ -1,5 +1,5 @@
-import { h } from './dom.js';
-import { hrMaxFor, ZONE_COLORS } from '../zones.js';
+import { h, icon } from './dom.js';
+import { hrMaxFor, ZONE_NAMES, ZONE_PRESETS } from '../zones.js';
 import { alertPlan } from '../alerts.js';
 import { ALERT_KEYS, DEFAULT_SETTINGS, withDefaults, boundsError } from '../settings-defaults.js';
 import { BleHeartRateSource } from '../hr-source.js';
@@ -27,17 +27,46 @@ export async function mount(root, ctx) {
   const draft = withDefaults(structuredClone(ctx.settings));
   const statusEl = h('div', { class: 'small', hidden: true });
   const hrMaxEl = h('b');
-  const zonePreview = h('div', { class: 'small' });
+  // Zone rows: colour picker + name + bpm range (range text refreshed by refreshDerived).
+  const rangeEls = [];
+  const colorInputs = [];
+  const zoneRows = [1, 2, 3, 4, 5].map(z => {
+    const range = h('span', { class: 'muted small num' });
+    const picker = h('input', {
+      type: 'color', value: draft.zoneColors[z], 'aria-label': `สี Z${z}`,
+      oninput: e => { draft.zoneColors[z] = e.target.value; refreshPresets(); },
+    });
+    rangeEls[z] = range;
+    colorInputs[z] = picker;
+    return h('div', { class: 'zone-row' }, picker, h('span', { class: 'name' }, ZONE_NAMES[z]), range);
+  });
+  const presetButtons = Object.entries(ZONE_PRESETS).map(([key, p]) => {
+    const btn = h('button', {
+      class: 'preset', type: 'button',
+      onclick: () => {
+        draft.zoneColors = [...p.colors];
+        colorInputs.forEach((inp, z) => { if (inp) inp.value = draft.zoneColors[z]; });
+        refreshPresets();
+      },
+    }, h('div', { class: 'swatches' }, p.colors.slice(1).map(c => h('span', { style: { background: c } }))), p.label);
+    btn.dataset.key = key;
+    return btn;
+  });
+  function refreshPresets() {
+    for (const btn of presetButtons) {
+      const colors = ZONE_PRESETS[btn.dataset.key].colors;
+      btn.classList.toggle('on', colors.every((c, i) => c.toLowerCase() === draft.zoneColors[i].toLowerCase()));
+    }
+  }
 
   function refreshDerived() {
     const hrMax = hrMaxFor(draft);
     hrMaxEl.textContent = Number.isFinite(hrMax) ? `${hrMax} bpm` : '—';
-    zonePreview.replaceChildren(...[1, 2, 3, 4, 5].map(z => {
+    for (let z = 1; z <= 5; z++) {
       const lo = Math.round((draft.zoneBounds[z - 1] / 100) * hrMax);
       const hi = Math.round((draft.zoneBounds[z] / 100) * hrMax) - 1;
-      return h('div', { class: 'row', style: { gap: '6px' } },
-        h('span', { class: 'dot', style: { background: ZONE_COLORS[z] } }), z === 5 ? `Z5: ${lo}+ bpm` : `Z${z}: ${lo}–${hi} bpm`);
-    }));
+      rangeEls[z].textContent = z === 5 ? `${lo}+ bpm` : `${lo}–${hi} bpm`;
+    }
     hrIn.disabled = !draft.hrMaxManual;
   }
 
@@ -73,7 +102,7 @@ export async function mount(root, ctx) {
         await ctx.player.unlock();
         ctx.player.play(alertPlan(SAMPLE_EVENT[key], { ...draft, muted: false }), ctx.flashEl);
       },
-    }, '▶')),
+    }, icon('play'))),
   ));
 
   function flash(msg, ok = true) {
@@ -112,9 +141,15 @@ export async function mount(root, ctx) {
       h('div', {}, 'HRmax ที่ใช้: ', hrMaxEl, h('span', { class: 'muted small' }, ' (220 − อายุ ถ้าไม่ได้กำหนดเอง)'))),
 
     h('div', { class: 'card stack' },
+      h('h2', {}, 'สี Zone'),
+      h('div', {}, zoneRows),
+      h('div', { class: 'muted small' }, 'ชุดสีสำเร็จรูป'),
+      h('div', { class: 'presets' }, presetButtons),
+      h('div', { class: 'muted small' }, 'สีนี้ใช้กับวงแหวนชีพจร, พื้นหลังหน้าต่างลอย (PiP) และกราฟ')),
+
+    h('div', { class: 'card stack' },
       h('h2', {}, 'ขอบเขต Zone (% ของ HRmax)'),
       h('div', { class: 'row' }, boundInputs.map((inp, i) => h('label', { class: 'small' }, i < 5 ? `Z${i + 1}≥` : 'max', inp))),
-      zonePreview,
       h('button', {
         class: 'ghost',
         onclick: () => {
@@ -136,7 +171,7 @@ export async function mount(root, ctx) {
     h('div', { class: 'card stack' },
       h('h2', {}, 'นาฬิกา (Amazfit T-Rex Pro)'),
       h('label', { style: { flexDirection: 'column', alignItems: 'stretch', width: '100%' } }, 'Auth key (hex 32 ตัวอักษร)',
-        h('div', { class: 'row' }, keyIn, h('button', { class: 'icon ghost', onclick: () => { keyIn.type = keyIn.type === 'password' ? 'text' : 'password'; } }, '👁'))),
+        h('div', { class: 'row' }, keyIn, h('button', { class: 'icon ghost', onclick: () => { keyIn.type = keyIn.type === 'password' ? 'text' : 'password'; } }, icon('eye')))),
       keyStatus,
       h('label', {}, h('input', { type: 'checkbox', checked: draft.authCrypt, onchange: e => { draft.authCrypt = e.target.checked; } }), 'ใช้ crypt flag 0x80 (T-Rex Pro ต้องเปิด)'),
       h('div', { class: 'small' },
@@ -153,8 +188,9 @@ export async function mount(root, ctx) {
       h('button', { class: 'ghost', onclick: forget }, 'ลืมนาฬิกาที่เคยเชื่อมต่อ')),
 
     statusEl,
-    h('button', { class: 'primary', style: { width: '100%' }, onclick: save }, '💾 บันทึกการตั้งค่า'),
+    h('button', { class: 'primary', style: { width: '100%' }, onclick: save }, icon('check'), 'บันทึกการตั้งค่า'),
   ));
   updateKeyStatus();
   refreshDerived();
+  refreshPresets();
 }

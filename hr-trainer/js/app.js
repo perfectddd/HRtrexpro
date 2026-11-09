@@ -3,7 +3,7 @@ import { AlertPlayer } from './alerts.js';
 import { BleHeartRateSource, DemoSource, isBluetoothSupported } from './hr-source.js';
 import { SessionRecorder } from './session-recorder.js';
 import { parseAuthKey } from './huami-auth.js';
-import { ask } from './ui/dom.js';
+import { ask, icon } from './ui/dom.js';
 import * as workoutScreen from './ui/workout-screen.js';
 import * as workoutsScreen from './ui/workouts-screen.js';
 import * as builderScreen from './ui/builder-screen.js';
@@ -119,6 +119,8 @@ async function recover() {
     await storage.clearCheckpoint();
   }
 }
+
+for (const a of document.querySelectorAll('#nav a[data-icon]')) a.prepend(icon(a.dataset.icon));
 
 async function init() {
   ctx.settings = await storage.getSettings();

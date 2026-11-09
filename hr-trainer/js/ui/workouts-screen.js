@@ -1,4 +1,4 @@
-import { h, fmtTime, ask, confirmDelete } from './dom.js';
+import { h, fmtTime, ask, confirmDelete, icon } from './dom.js';
 import { createFromTemplate, totalDurationSec, makeStep } from '../workout-model.js';
 
 function durationLabel(w) {
@@ -46,17 +46,17 @@ export async function mount(root, ctx) {
   async function render() {
     const list = await storage.listWorkouts();
     root.replaceChildren(h('div', {},
-      h('div', { class: 'row' }, h('h1', { class: 'grow' }, 'โปรแกรมฝึก'), h('button', { class: 'primary', onclick: createNew }, '+ ใหม่')),
+      h('div', { class: 'row' }, h('h1', { class: 'grow' }, 'โปรแกรมฝึก'), h('button', { class: 'primary', onclick: createNew }, icon('plus'), 'ใหม่')),
       list.length === 0 && h('p', { class: 'muted' }, 'ยังไม่มีโปรแกรม กด "+ ใหม่" เพื่อสร้าง'),
       h('div', { class: 'list' }, list.map(w =>
         h('div', { class: 'card' },
           h('div', { class: 'row' },
-            h('div', { class: 'grow' }, h('h2', { style: { marginBottom: '2px' } }, w.name), h('div', { class: 'muted small' }, durationLabel(w))),
-            h('button', { class: 'primary', onclick: () => ctx.navigate(`#/workout/${w.id}`) }, '▶ เริ่ม')),
+            h('div', { class: 'grow' }, h('h3', { style: { marginBottom: '2px' } }, w.name), h('div', { class: 'muted small' }, durationLabel(w))),
+            h('button', { class: 'primary', onclick: () => ctx.navigate(`#/workout/${w.id}`) }, icon('play'), 'เริ่ม')),
           h('div', { class: 'row', style: { marginTop: '10px' } },
-            h('button', { class: 'ghost', onclick: () => ctx.navigate(`#/builder/${w.id}`) }, '✏️ แก้'),
-            h('button', { class: 'ghost', onclick: () => duplicate(w) }, '⧉ ทำสำเนา'),
-            h('button', { class: 'ghost', onclick: () => remove(w) }, '🗑 ลบ'))),
+            h('button', { class: 'ghost', onclick: () => ctx.navigate(`#/builder/${w.id}`) }, icon('edit'), 'แก้'),
+            h('button', { class: 'ghost', onclick: () => duplicate(w) }, icon('copy'), 'ทำสำเนา'),
+            h('button', { class: 'ghost', onclick: () => remove(w) }, icon('trash'), 'ลบ'))),
       )),
     ));
   }

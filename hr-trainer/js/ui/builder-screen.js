@@ -1,4 +1,4 @@
-import { h, fmtTime } from './dom.js';
+import { h, fmtTime, icon } from './dom.js';
 import { validateWorkout, totalDurationSec, makeStep, KIND_COLORS, KIND_LABELS } from '../workout-model.js';
 
 const KINDS = Object.keys(KIND_LABELS);
@@ -56,7 +56,7 @@ export async function mount(root, ctx) {
       render();
     };
 
-    const colorIn = h('input', { type: 'color', value: step.color, oninput: e => { step.color = e.target.value; card.style.borderLeftColor = step.color; } });
+    const colorIn = h('input', { type: 'color', value: step.color, oninput: e => { step.color = e.target.value; card.style.setProperty('--item-color', step.color); } });
     const nameIn = h('input', { value: step.name, oninput: e => { step.name = e.target.value; } });
     const kindSel = h('select', {
       onchange: e => {
@@ -68,12 +68,12 @@ export async function mount(root, ctx) {
       },
     }, KINDS.map(k => h('option', { value: k, selected: k === step.kind }, KIND_LABELS[k])));
 
-    const card = h('div', { class: 'item', style: { borderLeftColor: step.color } },
+    const card = h('div', { class: 'item' },
       h('div', { class: 'row' },
         h('b', { class: 'grow' }, inner ? `  ↳ ขั้นตอน ${i + 1}` : `ขั้นตอน ${i + 1}`),
-        h('button', { class: 'icon ghost', onclick: () => { move(arr, i, -1); render(); } }, '↑'),
-        h('button', { class: 'icon ghost', onclick: () => { move(arr, i, 1); render(); } }, '↓'),
-        h('button', { class: 'icon ghost', onclick: () => { arr.splice(i, 1); render(); } }, '✕')),
+        h('button', { class: 'icon ghost', onclick: () => { move(arr, i, -1); render(); } }, icon('up')),
+        h('button', { class: 'icon ghost', onclick: () => { move(arr, i, 1); render(); } }, icon('down')),
+        h('button', { class: 'icon ghost', onclick: () => { arr.splice(i, 1); render(); } }, icon('x'))),
       h('div', { class: 'fields' },
         h('label', {}, 'ชื่อ', nameIn),
         h('label', {}, 'ประเภท', kindSel),
@@ -86,6 +86,7 @@ export async function mount(root, ctx) {
             zoneSel(step.targetZone ? step.targetZone.max : null, v => setZone('max', v)))),
         h('label', {}, 'สี', colorIn)),
     );
+    card.style.setProperty('--item-color', step.color);
     return card;
   }
 
@@ -98,9 +99,9 @@ export async function mount(root, ctx) {
       h('div', { class: 'row' },
         h('b', { class: 'grow' }, `ทำซ้ำ (ขั้นตอน ${i + 1})`),
         h('label', {}, timesIn, 'รอบ'),
-        h('button', { class: 'icon ghost', onclick: () => { move(draft.items, i, -1); render(); } }, '↑'),
-        h('button', { class: 'icon ghost', onclick: () => { move(draft.items, i, 1); render(); } }, '↓'),
-        h('button', { class: 'icon ghost', onclick: () => { draft.items.splice(i, 1); render(); } }, '✕')),
+        h('button', { class: 'icon ghost', onclick: () => { move(draft.items, i, -1); render(); } }, icon('up')),
+        h('button', { class: 'icon ghost', onclick: () => { move(draft.items, i, 1); render(); } }, icon('down')),
+        h('button', { class: 'icon ghost', onclick: () => { draft.items.splice(i, 1); render(); } }, icon('x'))),
       h('div', { class: 'inner' },
         rep.items.map((s, j) => stepEditor(s, rep.items, j, true)),
         h('button', { class: 'ghost', style: { marginTop: '8px' }, onclick: () => { rep.items.push(makeStep('work', 30)); render(); } }, '+ ขั้นตอนในบล็อก')),
@@ -142,7 +143,7 @@ export async function mount(root, ctx) {
       errorsEl,
       h('div', { class: 'row' },
         h('button', { class: 'ghost grow', onclick: () => ctx.navigate('#/workouts') }, 'ยกเลิก'),
-        h('button', { class: 'primary grow', onclick: save }, '💾 บันทึก')),
+        h('button', { class: 'primary grow', onclick: save }, icon('check'), 'บันทึก')),
     ),
   );
   render();
