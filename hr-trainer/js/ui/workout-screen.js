@@ -6,6 +6,7 @@ import { alertPlan, TargetMonitor, alertableEvents } from '../alerts.js';
 import { SessionRecorder } from '../session-recorder.js';
 import { PipView } from '../pip.js';
 import { formatClock, describeDrift } from '../watch-time.js';
+import { WatchStartTrigger } from '../watch-start.js';
 
 const STALE_MS = 3000;
 const STATUS_TEXT = { connected: 'เชื่อมต่อแล้ว', reconnecting: 'กำลังเชื่อมต่อใหม่…', disconnected: 'ไม่ได้เชื่อมต่อ' };
@@ -41,6 +42,8 @@ export async function mount(root, ctx) {
   const bannerEl = h('div', { class: 'ws-banner', hidden: true });
   const popEl = h('div', { class: 'ws-pop' });
   const btnStart = h('button', { class: 'primary', onclick: start }, '▶ เริ่ม');
+  const watchStart = new WatchStartTrigger();
+  const btnArm = h('button', { class: 'arm', onclick: toggleArm });
   const btnPause = h('button', { onclick: togglePause }, '⏸ พัก');
   const btnSkip = h('button', { onclick: skip }, '⏭ ข้าม');
   const btnStop = h('button', { onclick: stop }, '⏹ จบ');
@@ -57,7 +60,7 @@ export async function mount(root, ctx) {
       h('div', {}, totalEl, h('div', { class: 'lbl' }, 'เวลารวม')),
       h('div', {}, stepTimeEl, h('div', { class: 'lbl' }, 'ช่วงนี้'))),
     stepEl, nextEl, bannerEl,
-    h('div', { class: 'ws-controls' }, btnStart, btnPause, btnSkip, btnStop, btnMute, btnPip),
+    h('div', { class: 'ws-controls' }, btnStart, btnArm, btnPause, btnSkip, btnStop, btnMute, btnPip),
     popEl,
   );
   root.append(screen);
@@ -77,17 +80,23 @@ export async function mount(root, ctx) {
       showBanner('นาฬิกาหลุดการเชื่อมต่อ — กำลังเชื่อมต่อใหม่… (เวลายังเดินต่อ)', 60000);
     }
   };
+  const onWatchButton = () => {
+    if (!session && watchStart.onButton()) start();
+  };
   let bound = null;
   function bind(src) {
     if (bound === src) return;
     if (bound) {
       bound.removeEventListener('hr', onHr);
       bound.removeEventListener('status', onStatus);
+      bound.removeEventListener('watchbutton', onWatchButton);
     }
+    watchStart.disarm();
     bound = src;
     if (!src) return;
     src.addEventListener('hr', onHr);
     src.addEventListener('status', onStatus);
+    src.addEventListener('watchbutton', onWatchButton);
     connState = src.state;
   }
   bind(ctx.source);
@@ -171,6 +180,16 @@ export async function mount(root, ctx) {
     document.body.classList.add('in-workout');
     handle(session.timer.start(now));
     requestWakeLock();
+    tick();
+  }
+
+  async function toggleArm() {
+    if (watchStart.armed) {
+      watchStart.disarm();
+    } else {
+      await ctx.player.unlock(); // the watch press is not a user gesture, so unlock audio now
+      watchStart.arm();
+    }
     tick();
   }
 
@@ -305,6 +324,11 @@ export async function mount(root, ctx) {
     btnBle.hidden = running || !ctx.bluetoothSupported;
     btnDemo.hidden = running;
     btnStart.hidden = running;
+    const canArm = !running && connState === 'connected' && !!bound?.supportsWatchButton;
+    if (!canArm && watchStart.armed) watchStart.disarm();
+    btnArm.hidden = !canArm;
+    btnArm.textContent = watchStart.armed ? '✕ ยกเลิกรอ' : '⌚ เริ่มจากนาฬิกา';
+    btnArm.classList.toggle('armed', watchStart.armed);
     btnPause.hidden = btnSkip.hidden = btnStop.hidden = !running;
     btnPause.textContent = st?.status === 'paused' ? '▶ ต่อ' : '⏸ พัก';
     btnMute.textContent = ctx.settings.muted ? '🔇' : '🔊';
@@ -320,7 +344,9 @@ export async function mount(root, ctx) {
       totalEl.textContent = '00:00';
       stepTimeEl.textContent = '--:--';
       stepEl.textContent = w ? w.name : 'ยังไม่มีโปรแกรม';
-      nextEl.textContent = 'กด ▶ เริ่ม เมื่อพร้อม';
+      nextEl.textContent = watchStart.armed
+        ? '⌚ กดปุ่มเริ่มบนนาฬิกาได้เลย — แอปจะเริ่มพร้อมกัน'
+        : 'กด ▶ เริ่ม หรือ ⌚ เริ่มจากนาฬิกา';
     }
 
     pip?.render({

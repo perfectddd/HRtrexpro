@@ -5,6 +5,14 @@
 export const FEE0 = '0000fee0-0000-1000-8000-00805f9b34fb';
 export const FEE1 = '0000fee1-0000-1000-8000-00805f9b34fb';
 export const AUTH_CHAR = '00000009-0000-3512-2118-0009af100700';
+// Device events (service fee0). On T-Rex Pro every button press sends 0x04.
+export const DEVICE_EVENT_CHAR = '00000010-0000-3512-2118-0009af100700';
+
+export function parseDeviceEvent(bytes) {
+  if (!bytes || bytes.length < 1) return null;
+  if (bytes[0] === 0x04) return { type: 'button' };
+  return { type: 'other', code: bytes[0] };
+}
 
 // Heart Rate Control Point (0x2A39): stop manual, stop continuous, start continuous.
 export const HR_START_SEQUENCE = [

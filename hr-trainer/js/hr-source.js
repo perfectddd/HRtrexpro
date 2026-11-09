@@ -1,7 +1,7 @@
 import { parseHeartRate, isValidBpm } from './hr-parse.js';
 import {
   FEE0, FEE1, AUTH_CHAR, HR_START_SEQUENCE, HR_PING, HR_PING_INTERVAL_MS,
-  authRequest, authResponse, parseAuthReply, aesEcbBlock,
+  authRequest, authResponse, parseAuthReply, aesEcbBlock, DEVICE_EVENT_CHAR, parseDeviceEvent,
 } from './huami-auth.js';
 import { CURRENT_TIME_CHAR, WATCH_TIME_REFRESH_MS, parseCurrentTime, watchOffsetMs } from './watch-time.js';
 
@@ -90,6 +90,12 @@ export class BleHeartRateSource extends BaseSource {
     };
     this.watchOffsetMs = null;
     this._clockTimer = null;
+    this.supportsWatchButton = false;
+    this._eventChar = null;
+    this._onDeviceEvent = e => {
+      const ev = parseDeviceEvent(new Uint8Array(e.target.value.buffer));
+      if (ev?.type === 'button') this.dispatchEvent(new CustomEvent('watchbutton', { detail: { t: Date.now() } }));
+    };
     this._onDisconnected = () => {
       clearInterval(this._ping);
       clearInterval(this._clockTimer);
@@ -156,10 +162,25 @@ export class BleHeartRateSource extends BaseSource {
       for (const cmd of HR_START_SEQUENCE) await write(cp, cmd);
       clearInterval(this._ping);
       this._ping = setInterval(() => write(cp, HR_PING).catch(() => {}), HR_PING_INTERVAL_MS);
+      await this._listenDeviceEvents(server);
     }
     if (!this._wantConnected) return;
     this._status('connected');
     this._startWatchClock(server);
+  }
+
+  // Physical button presses on the watch → 'watchbutton' {t}. Optional: ignored if unavailable.
+  async _listenDeviceEvents(server) {
+    try {
+      const ch = await (await server.getPrimaryService(FEE0)).getCharacteristic(DEVICE_EVENT_CHAR);
+      if (this._eventChar) this._eventChar.removeEventListener('characteristicvaluechanged', this._onDeviceEvent);
+      this._eventChar = ch;
+      ch.addEventListener('characteristicvaluechanged', this._onDeviceEvent);
+      await ch.startNotifications();
+      this.supportsWatchButton = true;
+    } catch {
+      this.supportsWatchButton = false;
+    }
   }
 
   // Read the watch's clock now and every 5 minutes; emits 'watchtime' {offsetMs, tzQuarterHours}.
@@ -230,6 +251,15 @@ export class DemoSource extends BaseSource {
 
   get deviceName() {
     return 'Demo';
+  }
+
+  // Demo: simulate a watch button press (used to try "start from the watch" without a watch).
+  pressWatchButton() {
+    this.dispatchEvent(new CustomEvent('watchbutton', { detail: { t: Date.now() } }));
+  }
+
+  get supportsWatchButton() {
+    return this.state === 'connected';
   }
 
   connect() {
