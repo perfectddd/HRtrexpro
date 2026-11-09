@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hrMaxFor, zoneFor, pctOfMax, ZoneDetector, ZONE_COLORS } from '../js/zones.js';
+import { hrMaxFor, zoneFor, pctOfMax, ZoneDetector, ZONE_COLORS, ZONE_PRESETS, isHexColor } from '../js/zones.js';
 import { DEFAULT_SETTINGS } from '../js/settings-defaults.js';
 
 const B = [50, 60, 70, 80, 90, 100];
@@ -50,5 +50,16 @@ test('defaults and colors', () => {
   for (const k of ['countdown', 'stepChange', 'zoneChange', 'zoneHigh', 'belowTarget', 'disconnect']) {
     assert.deepEqual(DEFAULT_SETTINGS.alerts[k], { sound: true, vibrate: true, flash: true });
   }
-  assert.deepEqual(ZONE_COLORS, ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336']);
+  assert.deepEqual(ZONE_COLORS, ['#2a313c', '#94a3b8', '#38bdf8', '#34d399', '#fbbf24', '#fb7185']);
+});
+
+test('zone colour presets: soft (default), classic, earth', () => {
+  assert.deepEqual(Object.keys(ZONE_PRESETS), ['soft', 'classic', 'earth']);
+  assert.deepEqual(ZONE_PRESETS.soft.colors, ZONE_COLORS);
+  assert.deepEqual(ZONE_PRESETS.classic.colors, ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336']);
+  for (const p of Object.values(ZONE_PRESETS)) {
+    assert.equal(p.colors.length, 6);
+    assert.ok(p.colors.every(isHexColor), p.label);
+    assert.ok(p.label);
+  }
 });

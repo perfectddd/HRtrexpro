@@ -1,4 +1,10 @@
-export const ZONE_COLORS = ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336'];
+// Index 0 = no data, 1..5 = Z1..Z5. Default is the "soft" preset.
+export const ZONE_PRESETS = {
+  soft: { label: 'นุ่มนวล', colors: ['#2a313c', '#94a3b8', '#38bdf8', '#34d399', '#fbbf24', '#fb7185'] },
+  classic: { label: 'คลาสสิก', colors: ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336'] },
+  earth: { label: 'เอิร์ธโทน', colors: ['#2f2b27', '#a7b4a0', '#7fa7b8', '#c9b27c', '#d08c60', '#b85c5c'] },
+};
+export const ZONE_COLORS = ZONE_PRESETS.soft.colors;
 export const ZONE_NAMES = ['—', 'Z1 วอร์มอัพ', 'Z2 เผาผลาญไขมัน', 'Z3 แอโรบิก', 'Z4 แอนแอโรบิก', 'Z5 สูงสุด'];
 
 const HEX6 = /^#[0-9a-f]{6}$/i;
