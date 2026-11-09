@@ -1,12 +1,14 @@
-import { h, fmtTime, ask } from './dom.js';
-import { zoneFor, hrMaxFor, pctOfMax, ZoneDetector, ZONE_COLORS, ZONE_NAMES } from '../zones.js';
+import { h, fmtTime, ask, icon } from './dom.js';
+import { zoneFor, hrMaxFor, pctOfMax, ZoneDetector, zoneLabel, zoneColorFor, textColorFor } from '../zones.js';
 import { flattenWorkout } from '../workout-model.js';
 import { WorkoutTimer } from '../workout-timer.js';
 import { alertPlan, TargetMonitor, alertableEvents } from '../alerts.js';
 import { SessionRecorder } from '../session-recorder.js';
 import { PipView } from '../pip.js';
+import { formatClock, describeDrift } from '../watch-time.js';
+import { WatchStartTrigger } from '../watch-start.js';
+import { hrStatus, recordedBpm, BpmTween } from '../hr-display.js';
 
-const STALE_MS = 3000;
 const STATUS_TEXT = { connected: 'เชื่อมต่อแล้ว', reconnecting: 'กำลังเชื่อมต่อใหม่…', disconnected: 'ไม่ได้เชื่อมต่อ' };
 
 export async function mount(root, ctx) {
@@ -21,41 +23,55 @@ export async function mount(root, ctx) {
   let wakeLock = null;
   let highUntil = 0, belowUntil = 0;
   const pip = PipView.isSupported() ? new PipView() : null;
+  const displayZone = new ZoneDetector({ holdMs: 2000 });
 
   // ---------- DOM ----------
   const select = h('select', { onchange: () => { selectedId = select.value; } },
     workouts.map(w => h('option', { value: w.id, selected: w.id === selectedId }, w.name)));
   const dot = h('span', { class: 'dot' });
-  const devName = h('span', { class: 'small' });
-  const btnBle = h('button', { class: 'icon', title: 'เชื่อมต่อนาฬิกา', onclick: () => connect('ble') }, '⌚');
-  const btnDemo = h('button', { class: 'icon', title: 'โหมดจำลอง', onclick: () => connect('demo') }, 'Demo');
-  const zoneEl = h('div', { class: 'ws-zone' });
+  const devName = h('span', { class: 'row', style: { gap: '8px' } });
+  const watchClockEl = h('span', { class: 'watch-clock' });
+  const btnBle = h('button', { class: 'icon', title: 'เชื่อมต่อนาฬิกา', 'aria-label': 'เชื่อมต่อนาฬิกา', onclick: () => connect('ble') }, icon('watch'));
+  const btnDemo = h('button', { class: 'ghost', title: 'โหมดจำลอง', onclick: () => connect('demo') }, 'Demo');
+  const zoneEl = h('span', { class: 'chip ws-zone' });
   const bpmEl = h('div', { class: 'ws-bpm' });
+  const zoneEnEl = h('div', { class: 'ws-zone-en' });
+  const unitEl = h('div', { class: 'ws-unit' }, 'bpm');
+  const ringEl = h('div', { class: 'ring' }, bpmEl, unitEl, zoneEl, zoneEnEl);
+  const bpmTween = new BpmTween(600);
+  const zoneBar = h('div', { class: 'zone-bar', 'aria-hidden': 'true' }, [1, 2, 3, 4, 5].map(() => h('span')));
   const arrowEl = h('div', { class: 'ws-arrow' });
   const totalEl = h('div', { class: 'big' });
-  const stepTimeEl = h('div', { class: 'big' });
+  const stepTimeEl = h('div', { class: 'big zone-text' });
   const stepEl = h('div', { class: 'ws-step' });
   const nextEl = h('div', { class: 'ws-next' });
+  const progressEl = h('div');
   const bannerEl = h('div', { class: 'ws-banner', hidden: true });
   const popEl = h('div', { class: 'ws-pop' });
-  const btnStart = h('button', { class: 'primary', onclick: start }, '▶ เริ่ม');
-  const btnPause = h('button', { onclick: togglePause }, '⏸ พัก');
-  const btnSkip = h('button', { onclick: skip }, '⏭ ข้าม');
-  const btnStop = h('button', { onclick: stop }, '⏹ จบ');
+  const btnStart = h('button', { class: 'primary', onclick: start }, icon('play'), 'เริ่ม');
+  const watchStart = new WatchStartTrigger();
+  const btnArm = h('button', { class: 'arm', onclick: toggleArm });
+  const btnPause = h('button', { onclick: togglePause });
+  const btnSkip = h('button', { 'aria-label': 'ข้ามช่วง', onclick: skip }, icon('skip'), 'ข้าม');
+  const btnStop = h('button', { class: 'primary', onclick: stop }, icon('stop'), 'จบ');
   const btnMute = h('button', { class: 'icon', onclick: toggleMute });
-  const btnPip = h('button', { class: 'icon hide-compact', title: 'หน้าต่างลอย', hidden: !pip, onclick: togglePip }, '⧉');
+  const btnPip = h('button', { class: 'icon hide-compact', title: 'หน้าต่างลอย', 'aria-label': 'หน้าต่างลอย', hidden: !pip, onclick: togglePip }, icon('pip'));
 
   const screen = h('div', { class: 'ws' },
-    h('div', { class: 'ws-top' }, select, btnBle, btnDemo, dot),
-    h('div', { class: 'row small hide-compact', style: { marginTop: '4px', justifyContent: 'flex-end' } }, devName),
+    h('div', { class: 'ws-top' }, select, btnBle, btnDemo),
+    h('div', { class: 'ws-meta' }, watchClockEl, devName),
     !ctx.bluetoothSupported && h('div', { class: 'ws-banner' },
       'เบราว์เซอร์นี้ใช้ Web Bluetooth ไม่ได้ — เปิดด้วย Chrome บน Android ผ่าน HTTPS หรือกด Demo เพื่อทดลอง'),
-    zoneEl, bpmEl, arrowEl,
+    h('div', { class: 'ws-hero' }, ringEl, zoneBar),
+    arrowEl,
     h('div', { class: 'ws-times' },
-      h('div', {}, totalEl, h('div', { class: 'lbl' }, 'เวลารวม')),
-      h('div', {}, stepTimeEl, h('div', { class: 'lbl' }, 'ช่วงนี้'))),
-    stepEl, nextEl, bannerEl,
-    h('div', { class: 'ws-controls' }, btnStart, btnPause, btnSkip, btnStop, btnMute, btnPip),
+      h('div', { class: 'card' }, h('div', { class: 'lbl' }, 'เวลารวม'), totalEl),
+      h('div', { class: 'card' }, h('div', { class: 'lbl' }, 'ช่วงนี้'), stepTimeEl)),
+    h('div', { class: 'card ws-stepcard' },
+      h('div', { class: 'ws-stepline' }, stepEl, nextEl),
+      h('div', { class: 'progress' }, progressEl)),
+    bannerEl,
+    h('div', { class: 'ws-controls' }, btnStart, btnArm, btnPause, btnSkip, btnStop, btnMute, btnPip),
     popEl,
   );
   root.append(screen);
@@ -75,17 +91,23 @@ export async function mount(root, ctx) {
       showBanner('นาฬิกาหลุดการเชื่อมต่อ — กำลังเชื่อมต่อใหม่… (เวลายังเดินต่อ)', 60000);
     }
   };
+  const onWatchButton = () => {
+    if (!session && watchStart.onButton()) start();
+  };
   let bound = null;
   function bind(src) {
     if (bound === src) return;
     if (bound) {
       bound.removeEventListener('hr', onHr);
       bound.removeEventListener('status', onStatus);
+      bound.removeEventListener('watchbutton', onWatchButton);
     }
+    watchStart.disarm();
     bound = src;
     if (!src) return;
     src.addEventListener('hr', onHr);
     src.addEventListener('status', onStatus);
+    src.addEventListener('watchbutton', onWatchButton);
     connState = src.state;
   }
   bind(ctx.source);
@@ -133,8 +155,9 @@ export async function mount(root, ctx) {
   }
 
   // ---------- Session ----------
+  // Value used for recording, zone alerts and summaries (last reading for up to 8 s).
   function currentBpm(now) {
-    return lastHr && now - lastHr.t <= STALE_MS ? lastHr.bpm : null;
+    return recordedBpm(lastHr, now);
   }
 
   async function requestWakeLock() {
@@ -169,6 +192,16 @@ export async function mount(root, ctx) {
     document.body.classList.add('in-workout');
     handle(session.timer.start(now));
     requestWakeLock();
+    tick();
+  }
+
+  async function toggleArm() {
+    if (watchStart.armed) {
+      watchStart.disarm();
+    } else {
+      await ctx.player.unlock(); // the watch press is not a user gesture, so unlock audio now
+      watchStart.arm();
+    }
     tick();
   }
 
@@ -264,7 +297,8 @@ export async function mount(root, ctx) {
     const change = session.detector.update(zone, now);
     if (change) {
       fire({ type: change.to > change.from ? 'zoneUp' : 'zoneDown' });
-      pop(ZONE_NAMES[change.to]);
+      const l = zoneLabel(change.to);
+      pop(`${l.code} ${l.th} · ${l.en}`);
     }
     for (const ev of session.monitor.update({ zone, targetZone: st.step?.targetZone ?? null, nowMs: now })) {
       fire(ev);
@@ -274,20 +308,57 @@ export async function mount(root, ctx) {
   }
 
   // ---------- Render ----------
+  // Only touch the DOM when content changes (tick runs 4×/s).
+  function setButton(btn, iconName, label) {
+    const key = `${iconName}|${label}`;
+    if (btn.dataset.key === key) return;
+    btn.dataset.key = key;
+    btn.replaceChildren(icon(iconName), label);
+  }
+  function setText(el, text, ...prefix) {
+    if (el.dataset.key === text) return;
+    el.dataset.key = text;
+    el.replaceChildren(...prefix, text);
+  }
+
   function tick() {
     const now = Date.now();
     if (session) handle(session.timer.tick(now));
-    const bpm = currentBpm(now);
+    const status = hrStatus(lastHr, now, connState);
+    const bpm = status === 'lost' ? null : lastHr.bpm;
     const hrMax = hrMaxFor(ctx.settings);
-    const zone = bpm == null ? 0 : zoneFor(bpm, hrMax, ctx.settings.zoneBounds);
+    const rawZone = bpm == null ? 0 : zoneFor(bpm, hrMax, ctx.settings.zoneBounds);
+    // Shown zone changes only after holding 2 s, so colours don't flicker at a boundary.
+    if (bpm != null) displayZone.update(rawZone, now);
+    const zone = bpm == null ? 0 : displayZone.current;
 
-    screen.style.backgroundColor = ZONE_COLORS[zone];
-    screen.classList.toggle('high-warn', now < highUntil);
-    bpmEl.replaceChildren(bpm == null ? '--' : String(bpm), h('small', {}, ' bpm'));
-    zoneEl.replaceChildren(ZONE_NAMES[zone], bpm == null ? '' : h('span', { class: 'pct' }, ` · ${pctOfMax(bpm, hrMax)}%`));
-    arrowEl.textContent = now < belowUntil ? '⬆ เร่งขึ้น' : '';
+    const zoneColor = zoneColorFor(zone, ctx.settings);
+    screen.style.setProperty('--zone', zoneColor);
+    screen.style.setProperty('--on-zone', textColorFor(zoneColor));
+    ringEl.classList.toggle('high-warn', now < highUntil);
+    bpmTween.set(bpm, now);
+    paintBpm();
+    ringEl.classList.toggle('holding', status === 'holding');
+    ringEl.classList.toggle('lost', status === 'lost');
+    unitEl.textContent = status === 'holding' ? 'รอสัญญาณ…' : 'bpm';
+    const label = zoneLabel(zone);
+    zoneEl.textContent = bpm == null ? 'รอข้อมูลชีพจร' : `${label.code ? label.code + ' ' : ''}${label.th} · ${pctOfMax(bpm, hrMax)}%`;
+    zoneEnEl.textContent = bpm == null ? 'Waiting for heart rate' : label.en;
+    zoneBar.querySelectorAll('span').forEach((s, i) => {
+      s.style.background = zoneColorFor(i + 1, ctx.settings);
+      s.classList.toggle('on', zone === i + 1);
+    });
+    arrowEl.textContent = now < belowUntil ? '↑ เร่งขึ้นอีกนิด' : '';
     dot.className = `dot ${connState}`;
-    devName.textContent = `${bound?.deviceName ?? ''} ${STATUS_TEXT[connState]}`.trim();
+    setText(devName, `${bound?.deviceName ?? ''} ${STATUS_TEXT[connState]}`.trim(), dot);
+    const offset = bound?.watchOffsetMs ?? null;
+    const watchClock = offset == null ? null : formatClock(now, offset);
+    if (watchClock) {
+      const drift = describeDrift(offset);
+      watchClockEl.replaceChildren(icon('clock'), watchClock, drift ? h('span', { class: 'muted' }, drift) : '');
+    } else {
+      watchClockEl.replaceChildren();
+    }
 
     const running = !!session;
     const st = session?.timer.getState(now);
@@ -295,33 +366,70 @@ export async function mount(root, ctx) {
     btnBle.hidden = running || !ctx.bluetoothSupported;
     btnDemo.hidden = running;
     btnStart.hidden = running;
+    const canArm = !running && connState === 'connected' && !!bound?.supportsWatchButton;
+    if (!canArm && watchStart.armed) watchStart.disarm();
+    btnArm.hidden = !canArm;
+    setButton(btnArm, watchStart.armed ? 'x' : 'watch', watchStart.armed ? 'ยกเลิกรอ' : 'เริ่มจากนาฬิกา');
+    btnArm.classList.toggle('armed', watchStart.armed);
     btnPause.hidden = btnSkip.hidden = btnStop.hidden = !running;
-    btnPause.textContent = st?.status === 'paused' ? '▶ ต่อ' : '⏸ พัก';
-    btnMute.textContent = ctx.settings.muted ? '🔇' : '🔊';
+    setButton(btnPause, st?.status === 'paused' ? 'play' : 'pause', st?.status === 'paused' ? 'ต่อ' : 'พัก');
+    setButton(btnMute, ctx.settings.muted ? 'mute' : 'volume', '');
+    btnMute.setAttribute('aria-label', ctx.settings.muted ? 'เปิดเสียง' : 'ปิดเสียง');
 
     if (st) {
       totalEl.textContent = fmtTime(st.totalElapsedSec);
       stepTimeEl.textContent = st.stepRemainingSec == null ? fmtTime(st.stepElapsedSec) : fmtTime(Math.ceil(st.stepRemainingSec));
       const round = st.step.rounds ? ` ${st.step.round}/${st.step.rounds}` : '';
-      stepEl.textContent = `${st.step.name}${round}${st.status === 'paused' ? ' (พัก)' : ''}`;
+      stepEl.textContent = `${st.step.name}${round}${st.status === 'paused' ? ' · พักอยู่' : ''}`;
       nextEl.textContent = st.nextStep ? `ถัดไป: ${st.nextStep.name}` : 'ช่วงสุดท้าย';
+      const dur = st.step.durationSec;
+      progressEl.style.width = dur ? `${Math.min(100, (st.stepElapsedSec / dur) * 100)}%` : '100%';
     } else {
       const w = workouts.find(x => x.id === selectedId);
       totalEl.textContent = '00:00';
       stepTimeEl.textContent = '--:--';
       stepEl.textContent = w ? w.name : 'ยังไม่มีโปรแกรม';
-      nextEl.textContent = 'กด ▶ เริ่ม เมื่อพร้อม';
+      nextEl.textContent = watchStart.armed ? 'กดปุ่มเริ่มบนนาฬิกาได้เลย' : 'พร้อมเริ่ม';
+      progressEl.style.width = '0%';
     }
 
     pip?.render({
-      bpm,
+      bpm: displayedBpm(),
+      holding: status === 'holding',
       zone,
       stepName: st ? st.step.name : 'พร้อม',
       stepRemainingSec: st ? st.stepRemainingSec ?? st.stepElapsedSec : null,
       totalElapsedSec: st ? st.totalElapsedSec : 0,
       connection: connState,
+      watchClock,
+      zoneColor,
+      textColor: textColorFor(zoneColor),
+      zoneTh: bpm == null ? '' : `${label.code ? label.code + ' ' : ''}${label.th}`,
+      zoneEn: bpm == null ? '' : label.en,
+      stepLabel: st?.step.rounds ? `${st.step.name} ${st.step.round}/${st.step.rounds}` : (st ? st.step.name : 'พร้อม'),
     });
   }
+
+  // Smooth number: redraw the eased value every animation frame.
+  function displayedBpm() {
+    const v = bpmTween.value(Date.now());
+    return v == null ? null : Math.round(v);
+  }
+  let raf = 0;
+  function paintBpm() {
+    const v = displayedBpm();
+    const text = v == null ? '--' : String(v);
+    if (bpmEl.textContent !== text) bpmEl.textContent = text;
+    return v;
+  }
+  // rAF gives the smooth count; tick() also calls paintBpm() because rAF pauses
+  // while the page is hidden (e.g. PiP over another app).
+  function frame() {
+    const v = paintBpm();
+    if (pip?.isOpen && pip.view) pip.render({ ...pip.view, bpm: v });
+    raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
 
   const fast = setInterval(tick, 250);
   const slow = setInterval(everySecond, 1000);
@@ -329,6 +437,7 @@ export async function mount(root, ctx) {
 
   return () => {
     clearInterval(fast);
+    cancelAnimationFrame(raf);
     clearInterval(slow);
     document.removeEventListener('visibilitychange', onVisibility);
     bind(null);

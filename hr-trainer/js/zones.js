@@ -1,5 +1,43 @@
-export const ZONE_COLORS = ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336'];
-export const ZONE_NAMES = ['—', 'Z1 วอร์มอัพ', 'Z2 เผาผลาญไขมัน', 'Z3 แอโรบิก', 'Z4 แอนแอโรบิก', 'Z5 สูงสุด'];
+// Index 0 = no data, 1..5 = Z1..Z5. Default is the "soft" preset.
+export const ZONE_PRESETS = {
+  soft: { label: 'นุ่มนวล', colors: ['#2a313c', '#94a3b8', '#38bdf8', '#34d399', '#fbbf24', '#fb7185'] },
+  classic: { label: 'คลาสสิก', colors: ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336'] },
+  earth: { label: 'เอิร์ธโทน', colors: ['#2f2b27', '#a7b4a0', '#7fa7b8', '#c9b27c', '#d08c60', '#b85c5c'] },
+};
+export const ZONE_COLORS = ZONE_PRESETS.soft.colors;
+const ZONE_LABELS = [
+  { code: '', th: 'ต่ำกว่า Zone 1', en: 'Below zone 1' },
+  { code: 'Z1', th: 'วอร์มอัพ', en: 'Warm-up' },
+  { code: 'Z2', th: 'เผาผลาญไขมัน', en: 'Fat burn' },
+  { code: 'Z3', th: 'แอโรบิก', en: 'Aerobic' },
+  { code: 'Z4', th: 'แอนแอโรบิก', en: 'Anaerobic' },
+  { code: 'Z5', th: 'สูงสุด', en: 'Maximum' },
+];
+
+export function zoneLabel(zone) {
+  return { ...(ZONE_LABELS[zone] ?? ZONE_LABELS[0]) };
+}
+
+export const ZONE_NAMES = ['—', ...ZONE_LABELS.slice(1).map(l => `${l.code} ${l.th}`)];
+
+const HEX6 = /^#[0-9a-f]{6}$/i;
+export const isHexColor = c => typeof c === 'string' && HEX6.test(c);
+
+// The user's colour for a zone (0 = no data), falling back to the built-in palette.
+export function zoneColorFor(zone, settings) {
+  const custom = settings?.zoneColors?.[zone];
+  if (isHexColor(custom)) return custom;
+  return ZONE_COLORS[zone] ?? ZONE_COLORS[0];
+}
+
+// Readable text colour (near-black or white) for a given background.
+export function textColorFor(hex) {
+  const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const n = parseInt(hex.slice(1), 16);
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  // White on saturated/mid colours (zone reds, oranges, greens), dark only on light ones.
+  return L > 0.4 ? '#111111' : '#ffffff';
+}
 
 export function hrMaxFor(settings) {
   return settings.hrMaxManual ? settings.hrMax : 220 - settings.age;
