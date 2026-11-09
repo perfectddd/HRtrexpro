@@ -1,3 +1,5 @@
+import { ZONE_COLORS, isHexColor } from './zones.js';
+
 const on = () => ({ sound: true, vibrate: true, flash: true });
 
 export const ALERT_KEYS = ['countdown', 'stepChange', 'zoneChange', 'zoneHigh', 'belowTarget', 'disconnect'];
@@ -11,6 +13,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   zoneHighRepeatSec: 10,
   authKey: '',      // Huami/Zepp auth key (hex), stored only on this device
   authCrypt: true,  // crypt flag 0x80 — required on T-Rex Pro
+  zoneColors: [...ZONE_COLORS], // index 0 = no data, 1..5 = Z1..Z5
   alerts: Object.fromEntries(ALERT_KEYS.map(k => [k, on()])),
 });
 
@@ -28,6 +31,7 @@ export function withDefaults(stored = {}) {
     ...structuredClone({ ...DEFAULT_SETTINGS, alerts: undefined }),
     ...stored,
     zoneBounds: stored.zoneBounds ? [...stored.zoneBounds] : [...DEFAULT_SETTINGS.zoneBounds],
+    zoneColors: ZONE_COLORS.map((c, i) => (isHexColor(stored.zoneColors?.[i]) ? stored.zoneColors[i] : c)),
     alerts,
   };
 }

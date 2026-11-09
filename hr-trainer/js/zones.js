@@ -1,6 +1,25 @@
 export const ZONE_COLORS = ['#424242', '#9e9e9e', '#2196f3', '#4caf50', '#ff9800', '#f44336'];
 export const ZONE_NAMES = ['—', 'Z1 วอร์มอัพ', 'Z2 เผาผลาญไขมัน', 'Z3 แอโรบิก', 'Z4 แอนแอโรบิก', 'Z5 สูงสุด'];
 
+const HEX6 = /^#[0-9a-f]{6}$/i;
+export const isHexColor = c => typeof c === 'string' && HEX6.test(c);
+
+// The user's colour for a zone (0 = no data), falling back to the built-in palette.
+export function zoneColorFor(zone, settings) {
+  const custom = settings?.zoneColors?.[zone];
+  if (isHexColor(custom)) return custom;
+  return ZONE_COLORS[zone] ?? ZONE_COLORS[0];
+}
+
+// Readable text colour (near-black or white) for a given background.
+export function textColorFor(hex) {
+  const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const n = parseInt(hex.slice(1), 16);
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  // White on saturated/mid colours (zone reds, oranges, greens), dark only on light ones.
+  return L > 0.4 ? '#111111' : '#ffffff';
+}
+
 export function hrMaxFor(settings) {
   return settings.hrMaxManual ? settings.hrMax : 220 - settings.age;
 }
