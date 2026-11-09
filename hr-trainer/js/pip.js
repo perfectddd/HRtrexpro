@@ -24,7 +24,7 @@ export class PipView {
 
   async open() {
     if (!this.video.isConnected) document.body.append(this.video);
-    if (!this.video.srcObject) this.video.srcObject = this.canvas.captureStream(4);
+    if (!this.video.srcObject) this.video.srcObject = this.canvas.captureStream(10);
     this._draw();
     await this.video.play();
     await this.video.requestPictureInPicture();
@@ -39,7 +39,7 @@ export class PipView {
   render(view) {
     this.view = view;
     const now = performance.now();
-    if (this.isOpen && now - this._lastDraw >= 240) {
+    if (this.isOpen && now - this._lastDraw >= 90) {
       this._lastDraw = now;
       this._draw();
     }
@@ -76,7 +76,9 @@ export class PipView {
     // Bottom-left: heart rate.
     c.textAlign = 'left';
     c.font = font(300, 76);
+    c.globalAlpha = v.holding ? 0.5 : 1;
     c.fillText(v.bpm == null ? '--' : String(v.bpm), 14, 118);
+    c.globalAlpha = 1;
     c.font = font(600, 15);
     c.fillText(v.zoneTh || 'bpm', 18, 144);
     if (v.zoneEn) {

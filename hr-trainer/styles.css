@@ -139,7 +139,11 @@ body.in-workout .ws { height: 100vh; height: 100dvh; }
 .ring.high-warn { animation: pulse 1s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 calc(var(--size) * .04) color-mix(in srgb, var(--zone) 35%, transparent); } }
 .ws-bpm { font-size: calc(var(--size) * .36); font-weight: 300; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.ws-unit { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.ws-unit { color: var(--muted); font-size: 13px; margin-top: 2px; transition: color .3s; }
+.ws-bpm { transition: opacity .4s; }
+.ring.holding .ws-bpm { opacity: .45; }
+.ring.holding .ws-unit { color: var(--warn); }
+.ring.lost .ws-bpm { opacity: .3; }
 .ws-zone { margin-top: 10px; background: var(--zone); color: var(--on-zone); transition: background-color .5s; }
 .ws-zone-en { margin-top: 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .ws-arrow { text-align: center; font-size: 14px; color: var(--warn); min-height: 20px; }

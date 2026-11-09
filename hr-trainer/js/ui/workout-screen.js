@@ -7,8 +7,8 @@ import { SessionRecorder } from '../session-recorder.js';
 import { PipView } from '../pip.js';
 import { formatClock, describeDrift } from '../watch-time.js';
 import { WatchStartTrigger } from '../watch-start.js';
+import { hrStatus, recordedBpm, BpmTween } from '../hr-display.js';
 
-const STALE_MS = 3000;
 const STATUS_TEXT = { connected: 'เชื่อมต่อแล้ว', reconnecting: 'กำลังเชื่อมต่อใหม่…', disconnected: 'ไม่ได้เชื่อมต่อ' };
 
 export async function mount(root, ctx) {
@@ -36,7 +36,9 @@ export async function mount(root, ctx) {
   const zoneEl = h('span', { class: 'chip ws-zone' });
   const bpmEl = h('div', { class: 'ws-bpm' });
   const zoneEnEl = h('div', { class: 'ws-zone-en' });
-  const ringEl = h('div', { class: 'ring' }, bpmEl, h('div', { class: 'ws-unit' }, 'bpm'), zoneEl, zoneEnEl);
+  const unitEl = h('div', { class: 'ws-unit' }, 'bpm');
+  const ringEl = h('div', { class: 'ring' }, bpmEl, unitEl, zoneEl, zoneEnEl);
+  const bpmTween = new BpmTween(600);
   const zoneBar = h('div', { class: 'zone-bar', 'aria-hidden': 'true' }, [1, 2, 3, 4, 5].map(() => h('span')));
   const arrowEl = h('div', { class: 'ws-arrow' });
   const totalEl = h('div', { class: 'big' });
@@ -153,8 +155,9 @@ export async function mount(root, ctx) {
   }
 
   // ---------- Session ----------
+  // Value used for recording, zone alerts and summaries (last reading for up to 8 s).
   function currentBpm(now) {
-    return lastHr && now - lastHr.t <= STALE_MS ? lastHr.bpm : null;
+    return recordedBpm(lastHr, now);
   }
 
   async function requestWakeLock() {
@@ -321,7 +324,8 @@ export async function mount(root, ctx) {
   function tick() {
     const now = Date.now();
     if (session) handle(session.timer.tick(now));
-    const bpm = currentBpm(now);
+    const status = hrStatus(lastHr, now, connState);
+    const bpm = status === 'lost' ? null : lastHr.bpm;
     const hrMax = hrMaxFor(ctx.settings);
     const rawZone = bpm == null ? 0 : zoneFor(bpm, hrMax, ctx.settings.zoneBounds);
     // Shown zone changes only after holding 2 s, so colours don't flicker at a boundary.
@@ -332,7 +336,11 @@ export async function mount(root, ctx) {
     screen.style.setProperty('--zone', zoneColor);
     screen.style.setProperty('--on-zone', textColorFor(zoneColor));
     ringEl.classList.toggle('high-warn', now < highUntil);
-    bpmEl.textContent = bpm == null ? '--' : String(bpm);
+    bpmTween.set(bpm, now);
+    paintBpm();
+    ringEl.classList.toggle('holding', status === 'holding');
+    ringEl.classList.toggle('lost', status === 'lost');
+    unitEl.textContent = status === 'holding' ? 'รอสัญญาณ…' : 'bpm';
     const label = zoneLabel(zone);
     zoneEl.textContent = bpm == null ? 'รอข้อมูลชีพจร' : `${label.code ? label.code + ' ' : ''}${label.th} · ${pctOfMax(bpm, hrMax)}%`;
     zoneEnEl.textContent = bpm == null ? 'Waiting for heart rate' : label.en;
@@ -386,7 +394,8 @@ export async function mount(root, ctx) {
     }
 
     pip?.render({
-      bpm,
+      bpm: displayedBpm(),
+      holding: status === 'holding',
       zone,
       stepName: st ? st.step.name : 'พร้อม',
       stepRemainingSec: st ? st.stepRemainingSec ?? st.stepElapsedSec : null,
@@ -401,12 +410,34 @@ export async function mount(root, ctx) {
     });
   }
 
+  // Smooth number: redraw the eased value every animation frame.
+  function displayedBpm() {
+    const v = bpmTween.value(Date.now());
+    return v == null ? null : Math.round(v);
+  }
+  let raf = 0;
+  function paintBpm() {
+    const v = displayedBpm();
+    const text = v == null ? '--' : String(v);
+    if (bpmEl.textContent !== text) bpmEl.textContent = text;
+    return v;
+  }
+  // rAF gives the smooth count; tick() also calls paintBpm() because rAF pauses
+  // while the page is hidden (e.g. PiP over another app).
+  function frame() {
+    const v = paintBpm();
+    if (pip?.isOpen && pip.view) pip.render({ ...pip.view, bpm: v });
+    raf = requestAnimationFrame(frame);
+  }
+  raf = requestAnimationFrame(frame);
+
   const fast = setInterval(tick, 250);
   const slow = setInterval(everySecond, 1000);
   tick();
 
   return () => {
     clearInterval(fast);
+    cancelAnimationFrame(raf);
     clearInterval(slow);
     document.removeEventListener('visibilitychange', onVisibility);
     bind(null);
