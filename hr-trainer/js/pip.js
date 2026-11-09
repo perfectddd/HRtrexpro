@@ -75,10 +75,14 @@ export class PipView {
 
     // Bottom-left: heart rate.
     c.textAlign = 'left';
-    c.font = font(300, 84);
-    c.fillText(v.bpm == null ? '--' : String(v.bpm), 14, 132);
-    c.font = font(500, 15);
-    c.fillText(v.zone ? `Z${v.zone} · bpm` : 'bpm', 18, 158);
+    c.font = font(300, 76);
+    c.fillText(v.bpm == null ? '--' : String(v.bpm), 14, 118);
+    c.font = font(600, 15);
+    c.fillText(v.zoneTh || 'bpm', 18, 144);
+    if (v.zoneEn) {
+      c.font = font(400, 13);
+      c.fillText(v.zoneEn, 18, 162);
+    }
 
     // Bottom-right: step, step time, total.
     c.textAlign = 'right';

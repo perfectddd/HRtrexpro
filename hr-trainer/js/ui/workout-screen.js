@@ -1,5 +1,5 @@
 import { h, fmtTime, ask, icon } from './dom.js';
-import { zoneFor, hrMaxFor, pctOfMax, ZoneDetector, ZONE_NAMES, zoneColorFor, textColorFor } from '../zones.js';
+import { zoneFor, hrMaxFor, pctOfMax, ZoneDetector, zoneLabel, zoneColorFor, textColorFor } from '../zones.js';
 import { flattenWorkout } from '../workout-model.js';
 import { WorkoutTimer } from '../workout-timer.js';
 import { alertPlan, TargetMonitor, alertableEvents } from '../alerts.js';
@@ -35,7 +35,8 @@ export async function mount(root, ctx) {
   const btnDemo = h('button', { class: 'ghost', title: 'โหมดจำลอง', onclick: () => connect('demo') }, 'Demo');
   const zoneEl = h('span', { class: 'chip ws-zone' });
   const bpmEl = h('div', { class: 'ws-bpm' });
-  const ringEl = h('div', { class: 'ring' }, bpmEl, h('div', { class: 'ws-unit' }, 'bpm'), zoneEl);
+  const zoneEnEl = h('div', { class: 'ws-zone-en' });
+  const ringEl = h('div', { class: 'ring' }, bpmEl, h('div', { class: 'ws-unit' }, 'bpm'), zoneEl, zoneEnEl);
   const zoneBar = h('div', { class: 'zone-bar', 'aria-hidden': 'true' }, [1, 2, 3, 4, 5].map(() => h('span')));
   const arrowEl = h('div', { class: 'ws-arrow' });
   const totalEl = h('div', { class: 'big' });
@@ -293,7 +294,8 @@ export async function mount(root, ctx) {
     const change = session.detector.update(zone, now);
     if (change) {
       fire({ type: change.to > change.from ? 'zoneUp' : 'zoneDown' });
-      pop(ZONE_NAMES[change.to]);
+      const l = zoneLabel(change.to);
+      pop(`${l.code} ${l.th} · ${l.en}`);
     }
     for (const ev of session.monitor.update({ zone, targetZone: st.step?.targetZone ?? null, nowMs: now })) {
       fire(ev);
@@ -331,7 +333,9 @@ export async function mount(root, ctx) {
     screen.style.setProperty('--on-zone', textColorFor(zoneColor));
     ringEl.classList.toggle('high-warn', now < highUntil);
     bpmEl.textContent = bpm == null ? '--' : String(bpm);
-    zoneEl.textContent = bpm == null ? 'รอข้อมูลชีพจร' : `${ZONE_NAMES[zone]} · ${pctOfMax(bpm, hrMax)}%`;
+    const label = zoneLabel(zone);
+    zoneEl.textContent = bpm == null ? 'รอข้อมูลชีพจร' : `${label.code ? label.code + ' ' : ''}${label.th} · ${pctOfMax(bpm, hrMax)}%`;
+    zoneEnEl.textContent = bpm == null ? 'Waiting for heart rate' : label.en;
     zoneBar.querySelectorAll('span').forEach((s, i) => {
       s.style.background = zoneColorFor(i + 1, ctx.settings);
       s.classList.toggle('on', zone === i + 1);
@@ -391,6 +395,8 @@ export async function mount(root, ctx) {
       watchClock,
       zoneColor,
       textColor: textColorFor(zoneColor),
+      zoneTh: bpm == null ? '' : `${label.code ? label.code + ' ' : ''}${label.th}`,
+      zoneEn: bpm == null ? '' : label.en,
       stepLabel: st?.step.rounds ? `${st.step.name} ${st.step.round}/${st.step.rounds}` : (st ? st.step.name : 'พร้อม'),
     });
   }

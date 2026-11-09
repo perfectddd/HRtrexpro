@@ -5,7 +5,20 @@ export const ZONE_PRESETS = {
   earth: { label: 'เอิร์ธโทน', colors: ['#2f2b27', '#a7b4a0', '#7fa7b8', '#c9b27c', '#d08c60', '#b85c5c'] },
 };
 export const ZONE_COLORS = ZONE_PRESETS.soft.colors;
-export const ZONE_NAMES = ['—', 'Z1 วอร์มอัพ', 'Z2 เผาผลาญไขมัน', 'Z3 แอโรบิก', 'Z4 แอนแอโรบิก', 'Z5 สูงสุด'];
+const ZONE_LABELS = [
+  { code: '', th: 'ต่ำกว่า Zone 1', en: 'Below zone 1' },
+  { code: 'Z1', th: 'วอร์มอัพ', en: 'Warm-up' },
+  { code: 'Z2', th: 'เผาผลาญไขมัน', en: 'Fat burn' },
+  { code: 'Z3', th: 'แอโรบิก', en: 'Aerobic' },
+  { code: 'Z4', th: 'แอนแอโรบิก', en: 'Anaerobic' },
+  { code: 'Z5', th: 'สูงสุด', en: 'Maximum' },
+];
+
+export function zoneLabel(zone) {
+  return { ...(ZONE_LABELS[zone] ?? ZONE_LABELS[0]) };
+}
+
+export const ZONE_NAMES = ['—', ...ZONE_LABELS.slice(1).map(l => `${l.code} ${l.th}`)];
 
 const HEX6 = /^#[0-9a-f]{6}$/i;
 export const isHexColor = c => typeof c === 'string' && HEX6.test(c);

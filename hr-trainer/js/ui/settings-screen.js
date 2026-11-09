@@ -1,5 +1,5 @@
 import { h, icon } from './dom.js';
-import { hrMaxFor, ZONE_NAMES, ZONE_PRESETS } from '../zones.js';
+import { hrMaxFor, zoneLabel, ZONE_PRESETS } from '../zones.js';
 import { alertPlan } from '../alerts.js';
 import { ALERT_KEYS, DEFAULT_SETTINGS, withDefaults, boundsError } from '../settings-defaults.js';
 import { BleHeartRateSource } from '../hr-source.js';
@@ -38,7 +38,7 @@ export async function mount(root, ctx) {
     });
     rangeEls[z] = range;
     colorInputs[z] = picker;
-    return h('div', { class: 'zone-row' }, picker, h('span', { class: 'name' }, ZONE_NAMES[z]), range);
+    return h('div', { class: 'zone-row' }, picker, h('span', { class: 'name' }, `Z${z} ${zoneLabel(z).th}`, h('span', { class: 'muted small' }, ` · ${zoneLabel(z).en}`)), range);
   });
   const presetButtons = Object.entries(ZONE_PRESETS).map(([key, p]) => {
     const btn = h('button', {

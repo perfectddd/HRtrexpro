@@ -141,6 +141,7 @@ body.in-workout .ws { height: 100vh; height: 100dvh; }
 .ws-bpm { font-size: calc(var(--size) * .36); font-weight: 300; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .ws-unit { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .ws-zone { margin-top: 10px; background: var(--zone); color: var(--on-zone); transition: background-color .5s; }
+.ws-zone-en { margin-top: 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .ws-arrow { text-align: center; font-size: 14px; color: var(--warn); min-height: 20px; }
 
 .zone-bar { width: var(--size); display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; align-items: center; }
