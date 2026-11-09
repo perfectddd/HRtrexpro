@@ -31,13 +31,16 @@
   <label><input type="checkbox" id="rememberKey"> จำ key ในเบราว์เซอร์นี้</label><br>
   <button id="authConnect">เชื่อมต่อ + ยืนยันตัว</button>
   <button id="readTime">อ่านเวลานาฬิกา</button>
+  <button id="listenAll">ฟังทุกสัญญาณ</button>
+  <label><input type="checkbox" id="hideHr" checked> ซ่อน log ชีพจร</label>
 </div>
 <canvas id="cv" width="320" height="180" hidden></canvas>
 <video id="vid" muted playsinline></video>
 <div id="log"></div>
 <script>
 const $ = id => document.getElementById(id);
-const log = m => { $('log').textContent = new Date().toLocaleTimeString() + ' ' + m + '\n' + $('log').textContent; };
+const NOISY = /^(packets: |no HR packets|wrote 2A39: 16$)/;
+const log = m => { if ($('hideHr')?.checked && NOISY.test(m)) return; $('log').textContent = new Date().toLocaleTimeString() + ' ' + m + '\n' + $('log').textContent; };
 let bpm = null, last = null, t0 = Date.now(), ac = null, pkts = 0;
 log('bluetooth: ' + !!navigator.bluetooth + ', pip: ' + !!document.pictureInPictureEnabled + ', secure: ' + isSecureContext);
 
@@ -182,6 +185,33 @@ $('readTime').onclick = async () => {
       log(`time[${svcId === FEE0 ? 'fee0' : '1805'}] ERR ${e.name}: ${e.message}`);
     }
   }
+};
+
+// Subscribe to every notify/indicate characteristic in fee0 + fee1 and log each packet.
+// Used to discover what the watch sends when a workout starts / pauses / ends on the watch.
+$('listenAll').onclick = async () => {
+  const srv = window.__srv;
+  if (!srv?.connected) return log('ต้องกด "เชื่อมต่อ + ยืนยันตัว" ก่อน');
+  const short = u => (u.startsWith('0000') && u.endsWith('-0000-1000-8000-00805f9b34fb')) ? u.slice(4, 8) : u.slice(4, 8) + '*';
+  let n = 0;
+  for (const svcId of [FEE0, FEE1]) {
+    let chars = [];
+    try { chars = await (await srv.getPrimaryService(svcId)).getCharacteristics(); }
+    catch (e) { log(`list ${svcId.slice(4, 8)} ERR ${e.message}`); continue; }
+    for (const ch of chars) {
+      const p = ch.properties;
+      const props = Object.entries(p).filter(([, v]) => v === true).map(([k]) => k).join('/');
+      log(`char ${svcId.slice(4, 8)}/${short(ch.uuid)} [${props}]`);
+      if (!(p.notify || p.indicate) || ch.uuid === AUTH_CHAR) continue;
+      ch.addEventListener('characteristicvaluechanged', e => {
+        const b = new Uint8Array(e.target.value.buffer);
+        log(`EVT ${svcId.slice(4, 8)}/${short(ch.uuid)} (${b.length}): ${hex(b)}`);
+      });
+      try { await ch.startNotifications(); n++; }
+      catch (e) { log(`  notify ${short(ch.uuid)} ERR ${e.message}`); }
+    }
+  }
+  log(`กำลังฟัง ${n} ช่อง — ลองเริ่ม / พัก / จบ การออกกำลังกายบนนาฬิกา แล้วส่ง log มา`);
 };
 
 $('authConnect').onclick = async () => {
